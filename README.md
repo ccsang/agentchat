@@ -76,7 +76,7 @@ Claude 默认由会话内的单向 Channel 持续接收：空闲只查询本地 
 
 `probe` 和 `bun run test:native` 是显式的真实联调入口，可能产生模型调用，不包含在默认自动化测试中。`bun run verify:native` 仅查询已有证据。
 
-长时间空闲验收使用 `bun run test:native:idle --seconds 600`，通过后再单独运行 `--seconds 3600`。该测试只运行本地计时器，到期发一次真实测试请求后退出，不等待回复；Claude 返回结果后通知原 Codex 继续核对，最后不再互相确认。`bun run verify:native:idle` 被动核对间隔和回复。两次应顺序执行，机器及原会话保持运行，期间用户不再输入。加速时钟测试只属于自动化覆盖，不能代替真实等待。
+长时间空闲验收使用 `bun run test:native:idle --seconds 600`，通过后再单独运行 `--seconds 3600`。该测试只运行本地计时器，到期发一次真实测试请求后退出，不等待回复；Claude 返回结果后通知原 Codex 继续核对，最后不再互相确认。`bun run verify:native:idle` 被动核对间隔、回复和原接收实例仍在。两次应顺序执行，机器及原会话保持运行，期间用户不再输入。加速时钟测试只属于自动化覆盖，不能代替真实等待。
 
 设计借鉴 Yobiru 的持久化消息与通知分离，以及 Cumora 的共享消息流和统一 CLI。这里保留来源说明，没有复制两者源码。
 

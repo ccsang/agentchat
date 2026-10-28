@@ -11,6 +11,7 @@ import { dispatchSocket } from "../src/socket-adapter.ts";
 import { pause, paused, receiver, resume } from "../src/runtime.ts";
 import { recordProbeReply, startProbe } from "../src/probe.ts";
 import { writeJson } from "../src/files.ts";
+import { spawnSync } from "node:child_process";
 
 let f: ReturnType<typeof fixture>, store: Store, server: ReturnType<typeof createServer>, directory: string;
 let a: ReturnType<Store["join"]>, b: ReturnType<Store["join"]>, metaPath: string, socketPath: string, token: string;
@@ -177,4 +178,19 @@ test("a replaced socket inode cannot inherit the earlier process instance or its
     expect((await dispatchSocket(store, f.project, b)).state).toBe("unavailable"); expect(store.message("replaced").notify_batch_id).toBeNull();
     expect(receiver(f.project, b).state).toBe("inactive");
   } finally { await new Promise<void>(resolve => replacement.close(() => resolve())); }
+});
+test("passive idle verification cannot certify replies after the original receiver was replaced", () => {
+  configureSocket(f.project, b, true); const binding = socketBinding(f.project, b)!, nonce = "simulated-idle-correlation", now = Date.now();
+  store.send({ from: a.id, to: b.id, id: "simulated-idle", body: "fixture only", notify: true, now });
+  store.send({ from: b.id, replyTo: "simulated-idle", body: `idle-result:${nonce}`, notify: true, now });
+  const path = join(f.project.room, "simulated-idle-evidence.json");
+  writeJson(path, { phase: "request_stored", nonce, seconds: 600, fromId: a.id, toId: b.id, requestId: "simulated-idle", startedAt: now - 600000, notBefore: now,
+    baselineSeq: 0, receiverToken: binding.instance, adapter: peer.SOCKET_ADAPTER });
+  const verify = () => {
+    const result = spawnSync(process.execPath, [join(import.meta.dir, "../scripts/verify-idle-test.ts"), "--evidence", path], { cwd: f.root, env: testEnv(), encoding: "utf8" });
+    return JSON.parse(result.stdout);
+  };
+  expect(verify().ok).toBe(true);
+  metadata.procStart = "replaced process"; writeFileSync(metaPath, JSON.stringify(metadata));
+  const changed = verify(); expect(changed.ok).toBe(false); expect(changed.steps.original_receiver_present).toBe(false);
 });
