@@ -4,7 +4,7 @@
 
 ## 范围
 
-当前锁定 Claude Code 2.1.312、peerProtocol 1、交互 CLI。本机 macOS arm64 已完成原会话 nonce 和双向闭环；真实 10 分钟、1 小时空闲验收另行记录。其他版本、Linux、Windows、Desktop Code tab 等组合未验收。协议并非完整稳定的官方外部客户端 API，升级时需复核并重新验证。
+当前锁定 Claude Code 2.1.312、peerProtocol 1、交互 CLI。本机 macOS arm64 已完成原会话 nonce、双向闭环，以及顺序进行的真实 10 分钟和 1 小时空闲验收，详见 verification.md。其他版本、Linux、Windows、Desktop Code tab 等组合未验收。协议并非完整稳定的官方外部客户端 API，升级时需复核并重新验证。
 
 无独立收件服务、HTTP 端口、假原生会话或模型轮询。日常 CLI 和两张业务表保持不变。
 

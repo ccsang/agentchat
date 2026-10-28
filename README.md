@@ -10,7 +10,7 @@
 
 原生组合需要分别验收：`join`、配置文件存在或通知接口返回成功均不代表自动接收已验证。通过 `doctor` 查看接收能力及 nonce 回传证据。
 
-在当前自定义本地网关下，Claude 的 Channel 显示 `not currently available`。用户明确选择原生 socket 实验后，已在同一个 Claude Code 2.1.312 会话完成新 nonce 回传，并完成与原 Codex 会话的双向请求/回复闭环。10 分钟真实空闲验收已通过，1 小时验收正在计时；尚未结束，不能用加速测试替代。详情见 [验证记录](docs/verification.md)。
+在当前自定义本地网关下，Claude 的 Channel 显示 `not currently available`。用户明确选择原生 socket 实验后，已在同一个 Claude Code 2.1.312 会话完成新 nonce 回传，并完成与原 Codex 会话的双向请求/回复闭环。顺序进行的 10 分钟和 1 小时真实空闲验收均已通过，期间没有用户续期或模型心跳。详情见 [验证记录](docs/verification.md)。
 
 实验当前锁定 Claude Code 2.1.312、peerProtocol 1、交互 CLI；其他版本、平台和客户端组合未验收。Channel 和旧 hooks 的验证记录独立保留。
 
