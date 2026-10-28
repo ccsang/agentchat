@@ -2,15 +2,23 @@
 
 ## 当前能力
 
-当前仓库仅完成初始化。可运行 `bun run bin/agentchat --help` 和 `--version`；`join`、消息收发、安装器和原生接收适配器尚未实现。
+当前开发版提供 join、members、send、read，以及项目级 install、uninstall、doctor 和 probe。先查看 `bun run bin/agentchat --help`。
 
-此时不要告诉用户“已经加入”“已经接通”或“自动接收正常”。本文件描述未来的接入契约，不是现成安装流程。
+首次接入按以下步骤由 agent 操作，用户无需复制 room 或 UUID：
 
-## 未来接入入口
+1. 在此工具仓库运行 `bun install --frozen-lockfile --ignore-scripts`。
+2. 运行 `bun run bin/agentchat --project <当前业务项目目录> install` 查看具体改动；在用户已授权的安装范围内用同一命令追加 `--apply`。它准备项目私有工具副本、项目指令管理块和 Claude hooks，不改全局配置或审批设置。
+3. 在要协作的原生会话中，按项目 AGENTS.md / CLAUDE.md 新增的入口运行 `join`。Codex 从环境识别当前 thread；Claude 从 hook 环境或自己 socket 指向的准确会话元数据识别。
+4. Claude 已打开时需让客户端加载新 hooks；必要时由用户在原会话运行 `/hooks` 或恢复该会话。不要另开一份业务任务代替原会话。
+5. 查看 join 返回的成员与 reception。使用 send/read 协作；`probe` 会产生真实通知，仅在用户授权的联调范围内使用。
+
+只有完成 nonce 回传才能报告自动接收已验证。Claude 监听默认 300 秒，到期后变为 inactive，不通过唤醒模型续期。
+
+## 自助接入入口
 
 用户提出本项目的协作需求后，agent 调用确定性的安装和接入程序；不要根据长文临时拼接 hooks 或宿主配置，不要求用户手动填写 room、member、会话 UUID。
 
-拟定的内部入口是 `agentchat join`。它将负责：
+内部入口是 `agentchat join`。它负责：
 
 1. 发现当前项目与聊天室，校验双方可以访问同一目录。
 2. 从宿主提供的环境或 hook 输入取得准确会话身份。

@@ -1,56 +1,148 @@
+import { parseArgs } from "node:util";
 import { version } from "../package.json";
+import { discoverProject } from "./project.ts";
+import { identify } from "./identity.ts";
+import { Store } from "./store.ts";
+import { errorResult, requireThat } from "./errors.ts";
+import { receiver } from "./runtime.ts";
+import { notifyMember, paused, resume } from "./notify.ts";
+import { applyInstall, channelConfig, planInstall, preview } from "./install.ts";
+import { endHook, registerHook, waitHook } from "./hooks.ts";
+import type { HookInput } from "./hooks.ts";
+import type { Member } from "./types.ts";
+import { recordProbeReply, startProbe } from "./probe.ts";
 
-const plannedCommands = new Set(["join", "members", "send", "read"]);
+const HELP = `AgentChat ${version}
+Local project chat for coding agents. Output is JSON unless --help/--version is used.
 
-const help = `AgentChat ${version}
+Daily commands (project and native identity are discovered automatically):
+  join [--name NAME]                  Join this native session, idempotently.
+  members                            List registered members; no inferred online status.
+  send [--to NAME|ID | --reply-to ID] [--notify] [--id ID] --text TEXT
+  send [--to NAME|ID | --reply-to ID] [--notify] [--id ID] --stdin
+  read [--new | --after SEQ | --id ID | --mark SEQ] [--limit 20]
 
-Lightweight local communication for coding agents.
-Status: project scaffold; joining, messaging, and notifications are not implemented.
+Setup / diagnostics:
+  install [--apply] [--auto-join | --no-auto-join] [--budget N] [--watch-seconds N] [--codex-bin PATH]
+  uninstall [--apply]                 Remove only owned config; keep history.
+  doctor                             Report current identity and receiver evidence.
+  probe [--to NAME|ID]                Native nonce probe; may use model quota.
+  notify resume [--to NAME|ID]        Resume future notifications, never reset old attempts.
+  notify claude-channel              Optional one-way MCP channel, exact own session only.
+  channel-config [--apply]           Prepare a session-specific Channels fallback config.
 
-Usage:
-  agentchat --help
-  agentchat --version
-
-Planned agent-facing commands:
-  join       Discover the project and register the current native session.
-  members    List registered room members.
-  send       Append a shared message, directed request, or reply.
-  read       Read messages; move the read cursor only when explicitly requested.
-
-Read ONBOARDING.md for the intended agent-driven setup flow.
-Read docs/implementation-plan.md before implementing native integrations.
+Advanced / testing: --project DIR, --room DIR, --as MEMBER; join --generic --name NAME.
+Normal onboarding never requires the user to copy these parameters or a native UUID.
 `;
 
-export function runCli(args: readonly string[]): number {
-  if (
-    args.length === 0 ||
-    (args.length === 1 && ["--help", "-h", "help"].includes(args[0]!))
-  ) {
-    console.log(help);
-    return 0;
+async function stdin(limit: number): Promise<string> {
+  const chunks: Buffer[] = []; let size = 0;
+  for await (const chunk of process.stdin) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length; requireThat(size <= limit, "E_SIZE", "Input is too large"); chunks.push(buffer);
   }
-
-  if (args.length === 1 && ["--version", "-v", "version"].includes(args[0]!)) {
-    console.log(version);
-    return 0;
-  }
-
-  const command = args[0]!;
-  const planned = plannedCommands.has(command);
-  console.error(
-    JSON.stringify({
-      ok: false,
-      error: {
-        code: planned ? "E_NOT_IMPLEMENTED" : "E_USAGE",
-        message: planned
-          ? `${command} is planned but not implemented. No session was joined or notified.`
-          : "Unsupported arguments. Run agentchat --help.",
-      },
-    }),
-  );
-  return 2;
+  return Buffer.concat(chunks).toString("utf8");
+}
+function number(value: string | undefined, name: string): number | undefined {
+  if (value === undefined) return undefined;
+  requireThat(/^\d+$/.test(value) && Number.isSafeInteger(Number(value)), "E_USAGE", `${name} must be an integer`); return Number(value);
+}
+export async function runCli(args: readonly string[]): Promise<number> {
+  if (args.length === 0 || args.includes("--help") || args.includes("-h")) { console.log(HELP); return 0; }
+  if (args.length === 1 && ["--version", "-v", "version"].includes(args[0]!)) { console.log(version); return 0; }
+  // Hook configuration/argument failures must exit 1, never the asyncRewake signal 2.
+  let hook = args.some(arg => arg.startsWith("--agentchat-managed="));
+  let store: Store | undefined;
+  try {
+    const { values: v, positionals: p } = parseArgs({ args: [...args], allowPositionals: true, strict: true, options: {
+      project: { type: "string" }, room: { type: "string" }, as: { type: "string" }, name: { type: "string" },
+      generic: { type: "boolean" }, to: { type: "string" }, "reply-to": { type: "string" }, notify: { type: "boolean" },
+      id: { type: "string" }, text: { type: "string" }, stdin: { type: "boolean" }, new: { type: "boolean" },
+      after: { type: "string" }, limit: { type: "string" }, mark: { type: "string" }, json: { type: "boolean" },
+      apply: { type: "boolean" }, "auto-join": { type: "boolean" }, "no-auto-join": { type: "boolean" }, budget: { type: "string" },
+      "watch-seconds": { type: "string" }, "codex-bin": { type: "string" }, "agentchat-managed": { type: "string" },
+    } });
+    const command = p[0]; hook = command === "hook";
+    requireThat(p.length === (hook || command === "notify" ? 2 : 1), "E_USAGE", "Unexpected positional arguments");
+    const specific: Record<string, string[]> = {
+      join: ["name", "generic"], members: [], send: ["to", "reply-to", "notify", "id", "text", "stdin"],
+      read: ["new", "after", "id", "mark", "limit"], install: ["apply", "auto-join", "no-auto-join", "budget", "watch-seconds", "codex-bin"],
+      uninstall: ["apply"], doctor: [], probe: ["to"], notify: ["to"], hook: ["agentchat-managed"], "channel-config": ["apply"],
+    };
+    const allowed = new Set(["project", "room", "as", "json", ...(specific[command ?? ""] ?? [])]);
+    for (const key of Object.keys(v)) requireThat(allowed.has(key), "E_USAGE", `--${key} is not valid for ${command}`);
+    const project = discoverProject(v.project ?? process.cwd(), v.room);
+    let result: unknown;
+    if (command === "install" || command === "uninstall") {
+      requireThat(!(v["auto-join"] && v["no-auto-join"]), "E_USAGE", "Choose auto-join or no-auto-join");
+      const plan = await planInstall(project, { uninstall: command === "uninstall", autoJoin: v["no-auto-join"] ? false : v["auto-join"],
+        budget: number(v.budget, "budget"), watchSeconds: number(v["watch-seconds"], "watch-seconds"), codexBin: v["codex-bin"] });
+      result = v.apply ? applyInstall(plan) : preview(plan);
+    } else if (hook) {
+      const input = JSON.parse(await stdin(64 * 1024)) as HookInput;
+      if (p[1] === "session-start") result = registerHook(project, input, process.env);
+      else if (p[1] === "session-end") { endHook(project, input); return 0; }
+      else if (p[1] === "wait") {
+        const cancel = new AbortController();
+        const stop = () => cancel.abort(); process.on("SIGINT", stop); process.on("SIGTERM", stop);
+        try { const waited = await waitHook(project, input, cancel.signal); if (waited.text) console.error(waited.text); return waited.exitCode; }
+        finally { process.off("SIGINT", stop); process.off("SIGTERM", stop); }
+      } else requireThat(false, "E_USAGE", "Unknown hook action");
+    } else if (command === "doctor") {
+      let identity: unknown;
+      try { identity = identify(); } catch (error) { identity = errorResult(error); }
+      let member: Member | null = null, diagnostic: unknown = null;
+      try { store = new Store(project.room, { readonly: true }); member = v.as ? store.member(v.as) : store.actor(identify()); } catch (error) { diagnostic = errorResult(error); }
+      result = { ok: true, project, identity, joined: !!member, member, diagnostic, reception: member ? receiver(project, member) : null };
+    } else {
+      requireThat(["join", "members", "send", "read", "notify", "probe", "channel-config"].includes(command ?? ""), "E_USAGE", "Unknown command; use --help");
+      if (command === "join") {
+        requireThat(!v.generic || v.name, "E_IDENTITY", "Generic shell enrollment requires an explicit name");
+        const identity = v.generic ? { runtime: "generic" as const, session: null } : identify();
+        store = new Store(project.room, { create: true });
+        const member = store.join(identity, v.name);
+        result = { ok: true, joined: true, project, member, members: store.members(), reception: receiver(project, member) };
+      } else {
+        const writable = command === "send" || command === "probe" || command === "notify" || v.mark !== undefined;
+        store = new Store(project.room, { readonly: !writable });
+        const actor = (requireSelf = false) => {
+          const member = v.as ? store!.member(v.as) : store!.actor(identify());
+          if (requireSelf && member.runtime !== "generic") {
+            const host = identify();
+            requireThat(host.runtime === member.runtime && host.session === member.session_ref, "E_IDENTITY", "Native writes must use the current host session, not another member's profile");
+          }
+          return member;
+        };
+        if (command === "members") result = { ok: true, project, members: store.members() };
+        else if (command === "send") {
+          requireThat((v.text !== undefined) !== !!v.stdin, "E_USAGE", "Provide exactly one of --text or --stdin");
+          const sent = store.send({ from: actor(true).id, to: v.to, replyTo: v["reply-to"], body: v.stdin ? await stdin(8192) : v.text!, notify: v.notify, id: v.id });
+          let notification: unknown = { state: "not_requested" };
+          try {
+            if (sent.message.reply_to?.startsWith("probe-")) recordProbeReply(store, project, sent.message, identify());
+            if (sent.message.notify) notification = sent.reused ? { state: "not_retried", reason: "Idempotent resend never repeats a notification attempt" } : notifyMember(store, project, store.member(sent.message.to_id!));
+          } catch (error) { notification = { state: "unknown", diagnostic: errorResult(error) }; }
+          result = { ok: true, stored: true, message_id: sent.message.id, seq: sent.message.seq, reused: sent.reused, notify_requested: !!sent.message.notify, notification };
+        } else if (command === "read") {
+          requireThat([v.new, v.after !== undefined, v.id !== undefined, v.mark !== undefined].filter(Boolean).length <= 1, "E_USAGE", "Choose one read mode");
+          const me = actor(v.mark !== undefined);
+          if (v.id) result = { ok: true, message: store.message(v.id) };
+          else if (v.mark !== undefined) result = { ok: true, read_seq: store.mark(me.id, number(v.mark, "mark")!) };
+          else result = { ok: true, ...store.read(number(v.after, "after") ?? me.read_seq, number(v.limit, "limit")) };
+        } else if (command === "probe") result = startProbe(store, project, v.to ? store.member(v.to) : actor());
+        else if (command === "channel-config") result = channelConfig(project, actor(), !!v.apply);
+        else if (command === "notify") {
+          const me = actor();
+          if (p[1] === "resume") { const target = v.to ? store.member(v.to) : me; resume(project, target); result = { ok: true, resumed: target.id, old_reservations_preserved: true }; }
+          else if (p[1] === "claude-channel") { const { runChannel } = await import("./channel.ts"); await runChannel(project, me); return 0; }
+          else if (p[1] === "status") result = { ok: true, reception: receiver(project, me), paused: paused(project, me) };
+          else requireThat(false, "E_USAGE", "Unknown notification action");
+        }
+      }
+    }
+    console.log(JSON.stringify(result)); return 0;
+  } catch (error) { console.error(JSON.stringify(errorResult(error))); return hook ? 1 : 2; }
+  finally { store?.close(); }
 }
 
-if (import.meta.main) {
-  process.exitCode = runCli(process.argv.slice(2));
-}
+if (import.meta.main) process.exitCode = await runCli(process.argv.slice(2));

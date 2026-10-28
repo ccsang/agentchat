@@ -11,10 +11,16 @@
   "scripts": {
     "dev": "bun run src/cli.ts",
     "check": "tsc --noEmit",
-    "build": "bun build src/cli.ts --target=bun --outdir=dist"
+    "build": "bun build src/cli.ts --target=bun --outdir=dist",
+    "test": "bun test tests",
+    "test:native": "bun run scripts/start-native-test.ts",
+    "verify:native": "bun run scripts/verify-native.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2"
   }
 }
