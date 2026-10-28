@@ -25,5 +25,5 @@ try {
   const evidencePath = join(project.room, "native-tests", `${nonce}.json`);
   writeJson(evidencePath, { nonce, requestId, reverseId, fromId: from.id, toId: to.id, startedAt: Date.now() });
   writeJson(join(project.room, "latest-native-test.json"), { evidencePath });
-  console.log(JSON.stringify({ ok: true, evidence: evidencePath, request_id: sent.message.id, notification: notifyMember(store, project, to), verified: false }));
+  console.log(JSON.stringify({ ok: true, evidence: evidencePath, request_id: sent.message.id, notification: await notifyMember(store, project, to), verified: false }));
 } finally { store.close(); }

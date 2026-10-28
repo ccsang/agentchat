@@ -26,7 +26,7 @@ Codex / Claude / 其他 agent
        项目 chat.db
            │
            ├─ Codex：发送方按需调用 codex queue
-           └─ Claude：由原生会话托管的单向 Channel；hook 登记/清理
+           └─ Claude：单向 Channel；显式实验可直接通知原生 socket
 ```
 
 采用 TypeScript + Bun + bun:sqlite。CLI、安装器及适配脚本放在一个 package 中，只复用必要的存储和通知函数。
@@ -183,4 +183,20 @@ ONBOARDING.md 面向 agent。安装器负责确定性的预检、配置预览、
 
 显式的本地测试发布器只计时、检查接收实例未变且期间无 Claude 项目发言，到期发一次请求后退出。它不等待回复；Claude 的结果通知唤醒原 Codex 做被动核对，最终不再相互确认。数据相关性仍需与原生通知和无用户输入的会话证据一起阅读。
 
-加速时钟覆盖 10 分钟/1 小时逻辑、限流及恢复，仅算自动化覆盖，不计作真实持续验收。原生 socket 的外部客户端适配另作实验，不纳入本版默认接收路径。
+加速时钟覆盖 10 分钟/1 小时逻辑、限流及恢复，仅算自动化覆盖，不计作真实持续验收。原生 socket 的外部客户端适配由用户明确选择后作为实验提供，保持单独绑定、验证证据和版本锁定，不自动替代 Channel；详见 experimental-socket.md。
+
+## 11. 已授权的原生 socket 实验
+
+当前网关组合的 Channel 不可用，用户明确选择保留网关并开发原生 socket 适配。此选择不改变入站策略、模型认证或工具审批，也不授权重发已预留通知。
+
+发送方根据已登记 Claude 成员的准确 UUID，在本机原生 peer 元数据中寻找唯一有效实例。校验所属项目 common-dir、PID 的 UTC 起始时间、已核对版本与协议、CLI 会话类型、socket inode 与权限。两个有效进程同时声明同一个 UUID 时拒绝歧义；不同项目、已结束进程、新版本或替换 socket 不接管旧绑定。
+
+绑定存于独立的项目私有文件，避免与旧 Channel 的存活信息互相覆盖。当前实验仅允许 2.1.312 / peerProtocol 1；凭据每次从确切 peer 的 owner-only 文件读取，不进入绑定、日志或数据库。它使用 peerToken，不使用 native childToken，不提供虚构的回复 socket 或发送方权限等级。
+
+在独占通知锁内验证并连接目标后，短事务预留通知；事务外发送 NDJSON auth 和 next-priority user 通知，写出后再次核对实例。连接前的确定失败不消耗预留；开始提交后的错误、超时或实例变化均保守记为 unknown 并暂停，不重试、不切通道。Native hold/refuse 可能使已写出帧没有模型响应，必须以准确实例下的 nonce 回复验证。
+
+无额外监听器、HTTP 端口或业务 daemon。原生 Claude 自己持有收件箱，没有收件期限或模型心跳。Codex 和 socket 路径都是按需投递；若被时间窗口暂缓，本次保持持久消息并报告 held，不许把后台自动补投写进承诺。
+
+socket 的验证证据按具体进程/socket 实例存放。CLI 回传同时要求真实宿主身份与 CLAUDE_CODE_MESSAGING_SOCKET 匹配，旧 Channel nonce 或另一接收实例的回信不能验证当前适配。实验停用或项目卸载后不再通知，历史仍保留。
+
+长期验收除核对项目消息外，还比较锁定版本 peer 元数据的 idle 状态及更新时间。中途出现原生活动、进程变化或接收故障就停止并通知原 Codex，不能报告通过。计时器只在到期时发送一次真实请求，收到结果后由原 Codex 主动继续核对。

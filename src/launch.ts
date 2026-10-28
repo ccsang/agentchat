@@ -6,6 +6,7 @@ import { atomicWrite, privateDirectory, writeJson } from "./files.ts";
 import { requireThat } from "./errors.ts";
 import { uninstalled } from "./runtime.ts";
 import type { Member, Project } from "./types.ts";
+import { socketBinding } from "./socket-state.ts";
 
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 export function launcherScript(project: Project, member?: Member): string {
@@ -18,8 +19,9 @@ export function channelConfig(project: Project, member: Member, apply: boolean):
   const path = join(project.room, "launchers", `${member.name}.command`), script = launcherScript(project, member);
   if (apply) { privateDirectory(join(project.room, "launchers")); atomicWrite(path, script, 0o700); }
   return { ok: true, applied: apply, path, script, member_id: member.id, resumes_exact_session: true,
+    selected_receiver: socketBinding(project, member)?.enabled ? "claude-socket-experimental" : "channel",
     launch_argv: [path], reception_verified: false,
-    requirement: "Exit the existing Claude client, then run this launcher in a user terminal to restore the exact session. Claude may require development-channel and MCP consent on launch; account and organization restrictions still apply." };
+    requirement: "Exit the existing Claude client, then run this launcher in a user terminal to restore the exact session. It preserves the selected receiver. Channel mode may require host consent; a changed native socket process must be explicitly rebound and verified." };
 }
 export async function launchClaude(project: Project, member?: Member): Promise<number> {
   requireThat(process.stdin.isTTY && process.stdout.isTTY && !process.env.CODEX_THREAD_ID && !process.env.CLAUDECODE,
@@ -29,14 +31,15 @@ export async function launchClaude(project: Project, member?: Member): Promise<n
   const version = spawnSync(bin, ["--version"], { encoding: "utf8", timeout: 3000, killSignal: "SIGKILL" });
   requireThat(version.status === 0, "E_HOST", "Cannot inspect the Claude Code executable");
   const launch = createLaunch(project, member?.session_ref ?? null, version.stdout.trim());
+  const useSocket = !!member && socketBinding(project, member)?.enabled;
   const env: NodeJS.ProcessEnv = { ...process.env, ...launch.env };
   for (const key of ["CODEX_THREAD_ID", "AGENTCHAT_CLAUDE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_AGENT_ID", "AGENTCHAT_SUBAGENT"]) delete env[key];
   try {
     const path = join(project.room, "launches", `${launch.binding.id}.mcp.json`);
-    writeJson(path, { mcpServers: { agentchat: { command: process.execPath,
+    if (!useSocket) writeJson(path, { mcpServers: { agentchat: { command: process.execPath,
       args: [join(project.room, "agentchat.js"), "--project", project.root, "notify", "claude-channel"], env: launch.env } } });
-    const child = Bun.spawn([bin, ...(member ? ["--resume", member.session_ref!] : []), "--mcp-config", path,
-      "--dangerously-load-development-channels", "server:agentchat"], { cwd: project.root, env, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+    const child = Bun.spawn([bin, ...(member ? ["--resume", member.session_ref!] : []), ...(useSocket ? [] : ["--mcp-config", path,
+      "--dangerously-load-development-channels", "server:agentchat"])], { cwd: project.root, env, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
     try { launch.attachHost(child.pid); }
     catch (error) { child.kill("SIGTERM"); await child.exited; throw error; }
     const stop = (signal: NodeJS.Signals) => child.kill(signal);

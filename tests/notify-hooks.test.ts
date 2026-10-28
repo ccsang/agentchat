@@ -84,8 +84,8 @@ test("timeout after attempting submission is unknown and never automatically ret
   store.send({ from: b.id, to: a.id, notify: true, body: "first" });
   expect(dispatchCodex(store, f.project, a).state).toBe("unknown"); expect(paused(f.project, a)).not.toBeNull();
 }, 10000);
-test("nonce proof requires a reply from the exact intended native member", () => {
-  config(); arm(); const probe = startProbe(store, f.project, b); const id = probe.message_id as string, nonce = probe.nonce as string;
+test("nonce proof requires a reply from the exact intended native member", async () => {
+  config(); arm(); const probe = await startProbe(store, f.project, b); const id = probe.message_id as string, nonce = probe.nonce as string;
   const wrong = store.send({ from: a.id, replyTo: id, body: nonce }).message; recordProbeReply(store, f.project, wrong, { runtime: a.runtime, session: a.session_ref });
   expect(state(f.project, b)?.proof).toBeUndefined();
   const right = store.send({ from: b.id, replyTo: id, body: nonce }).message;
@@ -94,8 +94,8 @@ test("nonce proof requires a reply from the exact intended native member", () =>
   expect(state(f.project, b)?.proof?.replyId).toBe(right.id);
   expect(receiver(f.project, b).state).toBe("verified");
 });
-test("a probe queued during a long native turn remains valid; retries preserve the first reply timestamp", () => {
-  config(); arm(); const probe = startProbe(store, f.project, b), id = probe.message_id as string;
+test("a probe queued during a long native turn remains valid; retries preserve the first reply timestamp", async () => {
+  config(); arm(); const probe = await startProbe(store, f.project, b), id = probe.message_id as string;
   const path = join(f.project.room, "probes", `${id}.json`);
   const metadata = JSON.parse(readFileSync(path, "utf8")); metadata.createdAt = Date.now() - 3600000;
   writeJson(path, metadata);
@@ -104,11 +104,11 @@ test("a probe queued during a long native turn remains valid; retries preserve t
   recordProbeReply(store, f.project, reply, identity); expect(state(f.project, b)?.proof?.replyId).toBe(reply.id);
   recordProbeReply(store, f.project, reply, identity); expect(state(f.project, b)?.proof?.verifiedAt).toBe(reply.created_at);
 });
-test("a legacy Hook proof cannot verify a live Channel; restart requires a new Channel proof", () => {
+test("a legacy Hook proof cannot verify a live Channel; restart requires a new Channel proof", async () => {
   config(); arm(); const current = state(f.project, b)!;
   saveState(f.project, { ...current, proof: { nonce: "old", replyId: "old", verifiedAt: Date.now(), hostVersion: "fixture", adapter: "claude-receiver" } });
   expect(receiver(f.project, b).state).toBe("armed_unverified");
-  const probe = startProbe(store, f.project, b);
+  const probe = await startProbe(store, f.project, b);
   const reply = store.send({ from: b.id, replyTo: probe.message_id as string, body: probe.nonce as string }).message;
   recordProbeReply(store, f.project, reply, { runtime: "claude", session: b.session_ref });
   expect(receiver(f.project, b).state).toBe("verified");
@@ -116,14 +116,14 @@ test("a legacy Hook proof cannot verify a live Channel; restart requires a new C
   expect(receiver(f.project, b).state).toBe("armed_unverified");
   expect(receiver(f.project, b).evidence).toBeNull();
 });
-test("inactive Claude cannot claim a new Channel probe", () => {
-  config(); expect(() => startProbe(store, f.project, b)).toThrow("Start the exact Claude session");
+test("inactive Claude cannot claim a new Channel probe", async () => {
+  config(); await expect(startProbe(store, f.project, b)).rejects.toThrow("Start the exact Claude session");
 });
-test("an observed unavailable native Channel is blocked despite a healthy MCP transport", () => {
-  config(); arm(); const probe = startProbe(store, f.project, b); reportChannelUnavailable(f.project, b);
+test("an observed unavailable native Channel is blocked despite a healthy MCP transport", async () => {
+  config(); arm(); const probe = await startProbe(store, f.project, b); reportChannelUnavailable(f.project, b);
   const status = receiver(f.project, b);
   expect(status.transport_alive).toBe(true); expect(status.state).toBe("blocked"); expect(status.evidence).toBeNull();
-  expect(() => startProbe(store, f.project, b)).toThrow("host-blocked");
+  await expect(startProbe(store, f.project, b)).rejects.toThrow("host-blocked");
   const late = store.send({ from: b.id, replyTo: probe.message_id as string, body: probe.nonce as string }).message;
   recordProbeReply(store, f.project, late, { runtime: "claude", session: b.session_ref });
   expect(receiver(f.project, b).evidence).toBeNull();

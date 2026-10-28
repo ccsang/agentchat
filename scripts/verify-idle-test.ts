@@ -19,7 +19,7 @@ try {
   const request = evidence.requestId ? store.message(evidence.requestId) : null;
   const reply = request ? store.db.query("SELECT * FROM messages WHERE reply_to=? AND from_id=? AND to_id=? AND body=? AND notify=1 ORDER BY seq LIMIT 1")
     .get(request.id, evidence.toId, evidence.fromId, `idle-result:${evidence.nonce}`) as Message | null : null;
-  const steps = { real_idle_interval: !!request && request.created_at >= evidence.notBefore && request.created_at - evidence.startedAt >= evidence.seconds * 1000,
+  const steps = { publisher_completed: evidence.phase === "request_stored", real_idle_interval: !!request && request.created_at >= evidence.notBefore && request.created_at - evidence.startedAt >= evidence.seconds * 1000,
     exact_request: request?.from_id === evidence.fromId && request?.to_id === evidence.toId,
     exact_reply: !!reply && reply.created_at >= request!.created_at };
   const complete = Object.values(steps).every(Boolean);

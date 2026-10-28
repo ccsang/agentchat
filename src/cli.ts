@@ -13,6 +13,7 @@ import type { Member } from "./types.ts";
 import { recordProbeReply, startProbe } from "./probe.ts";
 import { launchClaude } from "./launch.ts";
 import { waitForLaunchHost } from "./binding.ts";
+import { configureSocket } from "./socket-state.ts";
 
 const HELP = `AgentChat ${version}
 Local project chat for coding agents. Output is JSON unless --help/--version is used.
@@ -33,6 +34,7 @@ Setup / diagnostics:
   notify unavailable [--to NAME|ID]   Record an observed native Channel-unavailable status.
   notify claude-channel              Session-owned one-way MCP Channel; launched by Claude.
   channel-config [--to NAME|ID] [--apply]  Prepare an exact-session Claude resume launcher.
+  socket-config [--to NAME|ID] [--apply] [--disable]  Opt in/out of the version-locked native socket experiment.
   launch claude [--to NAME|ID]        User-terminal entry; host consent remains interactive.
 
 Advanced / testing: --project DIR, --room DIR, --as MEMBER; join --generic --name NAME.
@@ -63,7 +65,7 @@ export async function runCli(args: readonly string[]): Promise<number> {
       generic: { type: "boolean" }, to: { type: "string" }, "reply-to": { type: "string" }, notify: { type: "boolean" },
       id: { type: "string" }, text: { type: "string" }, stdin: { type: "boolean" }, new: { type: "boolean" },
       after: { type: "string" }, limit: { type: "string" }, mark: { type: "string" }, json: { type: "boolean" },
-      apply: { type: "boolean" }, "auto-join": { type: "boolean" }, "no-auto-join": { type: "boolean" }, budget: { type: "string" },
+      apply: { type: "boolean" }, disable: { type: "boolean" }, "auto-join": { type: "boolean" }, "no-auto-join": { type: "boolean" }, budget: { type: "string" },
       "window-seconds": { type: "string" }, "codex-bin": { type: "string" }, "agentchat-managed": { type: "string" },
     } });
     const command = p[0]; hook = command === "hook";
@@ -71,7 +73,7 @@ export async function runCli(args: readonly string[]): Promise<number> {
     const specific: Record<string, string[]> = {
       join: ["name", "generic"], members: [], send: ["to", "reply-to", "notify", "id", "text", "stdin"],
       read: ["new", "after", "id", "mark", "limit"], install: ["apply", "auto-join", "no-auto-join", "budget", "window-seconds", "codex-bin"],
-      uninstall: ["apply"], doctor: [], probe: ["to"], notify: ["to"], hook: ["agentchat-managed"], "channel-config": ["apply", "to"], launch: ["to"],
+      uninstall: ["apply"], doctor: [], probe: ["to"], notify: ["to"], hook: ["agentchat-managed"], "channel-config": ["apply", "to"], "socket-config": ["apply", "to", "disable"], launch: ["to"],
     };
     const allowed = new Set(["project", "room", "as", "json", ...(specific[command ?? ""] ?? [])]);
     for (const key of Object.keys(v)) requireThat(allowed.has(key), "E_USAGE", `--${key} is not valid for ${command}`);
@@ -108,7 +110,7 @@ export async function runCli(args: readonly string[]): Promise<number> {
       try { store = new Store(project.room, { readonly: true }); member = v.as ? store.member(v.as) : store.actor(identify()); } catch (error) { diagnostic = errorResult(error); }
       result = { ok: true, project, identity, joined: !!member, member, diagnostic, reception: member ? receiver(project, member) : null };
     } else {
-      requireThat(["join", "members", "send", "read", "notify", "probe", "channel-config"].includes(command ?? ""), "E_USAGE", "Unknown command; use --help");
+      requireThat(["join", "members", "send", "read", "notify", "probe", "channel-config", "socket-config"].includes(command ?? ""), "E_USAGE", "Unknown command; use --help");
       if (command === "join") {
         requireThat(!v.generic || v.name, "E_IDENTITY", "Generic shell enrollment requires an explicit name");
         const identity = v.generic ? { runtime: "generic" as const, session: null } : identify();
@@ -133,7 +135,7 @@ export async function runCli(args: readonly string[]): Promise<number> {
           let notification: unknown = { state: "not_requested" };
           try {
             if (sent.message.reply_to?.startsWith("probe-")) recordProbeReply(store, project, sent.message, identify());
-            if (sent.message.notify) notification = sent.reused ? { state: "not_retried", reason: "Idempotent resend never repeats a notification attempt" } : notifyMember(store, project, store.member(sent.message.to_id!));
+            if (sent.message.notify) notification = sent.reused ? { state: "not_retried", reason: "Idempotent resend never repeats a notification attempt" } : await notifyMember(store, project, store.member(sent.message.to_id!));
           } catch (error) { notification = { state: "unknown", diagnostic: errorResult(error) }; }
           result = { ok: true, stored: true, message_id: sent.message.id, seq: sent.message.seq, reused: sent.reused, notify_requested: !!sent.message.notify, notification };
         } else if (command === "read") {
@@ -142,8 +144,9 @@ export async function runCli(args: readonly string[]): Promise<number> {
           if (v.id) result = { ok: true, message: store.message(v.id) };
           else if (v.mark !== undefined) result = { ok: true, read_seq: store.mark(me.id, number(v.mark, "mark")!) };
           else result = { ok: true, ...store.read(number(v.after, "after") ?? me.read_seq, number(v.limit, "limit")) };
-        } else if (command === "probe") result = startProbe(store, project, v.to ? store.member(v.to) : actor());
+        } else if (command === "probe") result = await startProbe(store, project, v.to ? store.member(v.to) : actor());
         else if (command === "channel-config") result = channelConfig(project, v.to ? store.member(v.to) : actor(), !!v.apply);
+        else if (command === "socket-config") result = configureSocket(project, v.to ? store.member(v.to) : actor(), !!v.apply, !!v.disable);
         else if (command === "notify") {
           const me = v.to ? store.member(v.to) : actor();
           if (p[1] === "resume") { resume(project, me); result = { ok: true, resumed: me.id, old_reservations_preserved: true }; }

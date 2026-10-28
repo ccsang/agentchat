@@ -6,11 +6,13 @@
 
 ## 当前状态
 
-这是开发版本 `0.1.0-dev.1`。已实现消息存储、四个日常命令、自助项目/会话发现、项目安装器、Claude 持续 Channel 接收和 Codex queue 通知。
+这是开发版本 `0.1.0-dev.2`。已实现消息存储、四个日常命令、自助项目/会话发现、项目安装器、Claude Channel、显式选择的原生 socket 实验接收和 Codex queue 通知。
 
 原生组合需要分别验收：`join`、配置文件存在或通知接口返回成功均不代表自动接收已验证。通过 `doctor` 查看接收能力及 nonce 回传证据。
 
-已在 macOS arm64、Bun 1.3.14、Codex Desktop CLI 0.165.0-alpha.1.2 与 Claude Code 2.1.312 的原会话中验证双向请求/回复；完整记录见 [验证记录](docs/verification.md)。该记录属于旧版 hooks 路径。新版 Channel 已在本机完成进程连接与准确会话绑定，但当前 Claude 显示 `Configured but not active (not currently available)`；尚未取得 Channel nonce，也未通过 10 分钟 / 1 小时真实空闲验收。其他客户端组合仍需分别检查。
+在当前自定义本地网关下，Claude 的 Channel 显示 `not currently available`。用户明确选择原生 socket 实验后，已在同一个 Claude Code 2.1.312 会话完成新 nonce 回传，并完成与原 Codex 会话的双向请求/回复闭环。10 分钟真实空闲验收已通过，1 小时验收正在计时；尚未结束，不能用加速测试替代。详情见 [验证记录](docs/verification.md)。
+
+实验当前锁定 Claude Code 2.1.312、peerProtocol 1、交互 CLI；其他版本、平台和客户端组合未验收。Channel 和旧 hooks 的验证记录独立保留。
 
 ## 目标体验
 
@@ -29,7 +31,7 @@ agent 内部完成项目发现、会话识别、成员登记和接收能力检�
 ```bash
 bun install --frozen-lockfile --ignore-scripts
 bun run check
-bun test
+bun run test
 bun run dev --help
 bun run dev --version
 bun run build
@@ -56,6 +58,10 @@ bun run build
 
 ## 运行方式
 
+用户选择保留当前网关并尝试原生 socket 后，agent 内部调用 `socket-config --apply`，对现有原生会话启用实验接收。无需重启 Claude 或新增收件服务；发送时直接连接原生收件箱。内部参数和目标发现由 agent 完成，日常仍使用 join / members / send / read。
+
+该适配不是 Channel 失败后的自动降级：只处理明确选择后产生的未预留通知，旧 Channel 通知不会重发。它保留原生入站规则和工具审批，不修改网关或认证，不使用子进程凭据冒充原生会话。版本不匹配、进程或 socket 实例变化时拒绝发送，需明确重新绑定和验证。`socket-config --disable --apply` 可退出实验，消息历史仍保留。具体协议与边界见 [原生 socket 实验](docs/experimental-socket.md)。
+
 Git 项目的消息库保存在 Git common directory 下的 `agentchat/chat.db`，同一仓库的 worktree 自动共用；不同 clone 不合并。非 Git 项目使用 `.agentchat/chat.db`。运行目录和消息不进入版本控制。
 
 Claude 默认由会话内的单向 Channel 持续接收：空闲只查询本地 SQLite，有定向通知才唤醒模型，无 300 秒收件窗口或用户续期。SessionStart / SessionEnd hooks 只登记和清理；升级会移除本工具的旧 Stop 监听，并保留其他 hooks。
@@ -64,7 +70,7 @@ Claude 默认由会话内的单向 Channel 持续接收：空闲只查询本地 
 
 启动入口每次生成独立标识，通过真实 SessionStart 的 `session_id` 与 Channel 握手。MCP 子进程无需继承 hook 注入的原生 UUID；旧启动上下文不能复用。Channel 的本地存活检查每隔约 15 秒更新，空闲不调用模型；这个内部租约不会使会话在长时间空闲后过期。
 
-默认每个成员每 10 分钟最多 20 批通知，相隔至少 5 秒。限流后显示 `rate_limited` 和恢复时间，Channel 自动等待；未知写入结果显示暂停，不自动重发旧批次。`doctor` 区分进程存活、当前 Channel nonce 验证、限流、暂停和临时数据库故障。旧 hook 或上一个 Channel 进程的证据只保留为历史。
+默认每个成员每 10 分钟最多 20 批通知，相隔至少 5 秒。限流后显示 `rate_limited` 和恢复时间；Channel 可持续等待，Codex 与实验 socket 采用发送时按需通知，不承诺后台补投。未知写入结果显示暂停，不自动重发旧批次。`doctor` 区分接收实例存活、当前适配器 nonce 验证、限流、暂停和临时数据库故障。旧 hook 或上一个 Channel 进程的证据只保留为历史。
 
 账号、组织策略、会话启用和协议版本仍可能限制 Channels；配置和 MCP 连接成功不证明模型能收信。Codex 的 queue 通知需要等当前轮次结束，不应在 shell 中阻塞等回复。
 

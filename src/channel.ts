@@ -11,6 +11,7 @@ import { listenerLock, pause, paused, policy, saveState, state, uninstalled } fr
 import { tryLock } from "./lock.ts";
 import { notice } from "./notify.ts";
 import { Store } from "./store.ts";
+import { socketBinding } from "./socket-state.ts";
 
 export function databaseBusy(error: unknown): boolean {
   const code = (error as { code?: string })?.code;
@@ -57,6 +58,7 @@ export async function runChannel(project: Project, options: ChannelOptions = {})
         store ??= new Store(project.room);
         if (!member) {
           member = store.actor({ runtime: "claude", session: binding.session! });
+          if (socketBinding(project, member)?.enabled) break;
           privateDirectory(join(project.room, "listeners"));
           release = tryLock(listenerLock(project, member));
           requireThat(release, "E_BUSY", "This exact Claude session already has a Channel receiver");
@@ -64,6 +66,7 @@ export async function runChannel(project: Project, options: ChannelOptions = {})
         }
         requireThat(member.session_ref === binding.session, "E_BINDING", "Channel binding changed native sessions");
         const current = state(project, member);
+        if (socketBinding(project, member)?.enabled) break;
         if (!current?.active) break;
         if (current.listener?.token !== token) throw new ChatError("E_BINDING", "Receiver ownership changed");
         if (paused(project, member)) {
