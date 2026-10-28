@@ -7,7 +7,7 @@
 - [x] 实施 SQLite、四个命令、项目/会话发现及确定性安装器。
 - [x] 实施 Codex queue、Claude hook 与可选单向 Channel。
 - [x] 验证 Claude 原会话 hook nonce 回传；Codex 提交通知已拿到准确 queue 回执。
-- [ ] Codex 原会话下一轮消费队列，并完成双向闭环验收。
+- [x] Codex 原会话下一轮消费队列，并完成双向闭环验收。
 
 当前是开发实现；已实现能力和真实宿主验证边界另见 verification.md。消息落库、模拟宿主测试和真实原会话回传分别记录。
 

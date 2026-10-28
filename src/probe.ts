@@ -28,9 +28,11 @@ export function startProbe(store: Store, project: Project, member: Member): Reco
 export function recordProbeReply(store: Store, project: Project, message: Message, identity: Identity): void {
   if (!message.reply_to?.startsWith("probe-")) return;
   const probe = readJson<Probe>(join(project.room, "probes", `${message.reply_to}.json`));
-  if (!probe || Date.now() - probe.createdAt > 1800000 || message.from_id !== probe.memberId || message.body.trim() !== probe.nonce) return;
+  // Notification TTL limits new wake attempts, not an already queued native reply.
+  // A long active turn may keep the probe queued for more than 30 minutes.
+  if (!probe || message.from_id !== probe.memberId || message.body.trim() !== probe.nonce) return;
   const member = store.member(message.from_id);
   if (identity.runtime !== member.runtime || identity.session !== member.session_ref || member.session_ref !== probe.session || store.message(probe.id).to_id !== member.id) return;
   saveState(project, { ...state(project, member), session: probe.session, active: true, memberId: member.id,
-    proof: { nonce: probe.nonce, replyId: message.id, verifiedAt: Date.now(), hostVersion: probe.hostVersion, adapter: probe.adapter } });
+    proof: { nonce: probe.nonce, replyId: message.id, verifiedAt: message.created_at, hostVersion: probe.hostVersion, adapter: probe.adapter } });
 }

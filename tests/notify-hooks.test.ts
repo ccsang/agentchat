@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Store } from "../src/store.ts";
 import { cli, fixture, nativeIdentity, testEnv } from "./helpers.ts";
@@ -111,6 +111,16 @@ test("nonce proof requires a reply from the exact intended native member", () =>
   recordProbeReply(store, f.project, right, { runtime: b.runtime, session: b.session_ref });
   expect(state(f.project, b)?.proof?.replyId).toBe(right.id);
   expect(receiver(f.project, b).state).toBe("inactive");
+});
+test("a probe queued during a long native turn remains valid; retries preserve the first reply timestamp", () => {
+  config(); const probe = startProbe(store, f.project, b), id = probe.message_id as string;
+  const path = join(f.project.room, "probes", `${id}.json`);
+  const metadata = JSON.parse(readFileSync(path, "utf8")); metadata.createdAt = Date.now() - 3600000;
+  writeJson(path, metadata);
+  const reply = store.send({ from: b.id, replyTo: id, body: probe.nonce as string, now: Date.now() - 1000 }).message;
+  const identity = { runtime: b.runtime, session: b.session_ref };
+  recordProbeReply(store, f.project, reply, identity); expect(state(f.project, b)?.proof?.replyId).toBe(reply.id);
+  recordProbeReply(store, f.project, reply, identity); expect(state(f.project, b)?.proof?.verifiedAt).toBe(reply.created_at);
 });
 test("Channel rejects an old member profile before connecting MCP", async () => {
   const { runChannel } = await import("../src/channel.ts");

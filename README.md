@@ -10,6 +10,8 @@
 
 原生组合需要分别验收：`join`、配置文件存在或通知接口返回成功均不代表自动接收已验证。通过 `doctor` 查看接收能力及 nonce 回传证据。
 
+已在 macOS arm64、Bun 1.3.14、Codex Desktop CLI 0.165.0-alpha.1.2 与 Claude Code 2.1.312 的原会话中验证双向请求/回复；完整记录见 [验证记录](docs/verification.md)。其他客户端组合仍需分别检查。
+
 ## 目标体验
 
 首次向 agent 提供仓库的 [接入说明](ONBOARDING.md)，之后只需说：
