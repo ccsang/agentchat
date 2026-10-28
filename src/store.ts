@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { ChatError, requireThat } from "./errors.ts";
 import { createPrivateFile, privateDirectory, regularFile } from "./files.ts";
-import type { Batch, Identity, Member, Message, Page } from "./types.ts";
+import type { Batch, Identity, Member, Message, NotificationLimit, Page } from "./types.ts";
 import { sessionId } from "./identity.ts";
 
 const APP_ID = 0x41474348;
@@ -151,22 +151,29 @@ export class Store {
       this.db.query("UPDATE members SET read_seq=? WHERE id=?").run(cursor, member.id); return cursor;
     }).immediate();
   }
-  claim(memberId: string, budget = 20, now = Date.now()): { batch: Batch | null; reason: string; used: number } {
+  notificationLimit(memberId: string, budget = 20, now = Date.now(), windowMs = 600000): NotificationLimit {
     requireThat(Number.isInteger(budget) && budget >= 1 && budget <= 10000, "E_BUDGET", "Invalid notification budget");
+    requireThat(Number.isSafeInteger(windowMs) && windowMs >= 5000 && windowMs <= 86400000, "E_BUDGET", "Invalid notification window");
+    const stats = this.db.query("SELECT count(DISTINCT notify_batch_id) used,min(notify_claimed_at) first,max(notify_claimed_at) last FROM messages WHERE to_id=? AND notify_claimed_at>? AND notify_claimed_at<=?")
+      .get(memberId, now - windowMs, now) as { used: number; first: number | null; last: number | null };
+    const limited = stats.used >= budget;
+    const interval = stats.last !== null && now - stats.last < 5000;
+    return { reason: limited ? "budget_exhausted" : interval ? "minimum_interval" : "ready", used: stats.used, budget, window_ms: windowMs,
+      retry_at: limited ? stats.first! + windowMs : interval ? stats.last! + 5000 : null };
+  }
+  claim(memberId: string, budget = 20, now = Date.now(), windowMs = 600000): { batch: Batch | null; reason: string; used: number; retry_at: number | null } {
     return this.db.transaction(() => {
       const member = this.member(memberId);
-      const stats = this.db.query("SELECT count(DISTINCT notify_batch_id) used,max(notify_claimed_at) last FROM messages WHERE to_id=?")
-        .get(member.id) as { used: number; last: number | null };
-      const result = (reason: string) => ({ batch: null, reason, used: stats.used });
-      if (stats.used >= budget) return result("budget_exhausted");
-      if (stats.last !== null && now - stats.last < 5000) return result("minimum_interval");
+      const limit = this.notificationLimit(member.id, budget, now, windowMs);
+      const result = (reason: string) => ({ batch: null, reason, used: limit.used, retry_at: limit.retry_at });
+      if (limit.reason !== "ready") return result(limit.reason);
       const messages = this.db.query("SELECT * FROM messages WHERE to_id=? AND notify=1 AND notify_batch_id IS NULL AND seq>? AND created_at>=? AND created_at<=? ORDER BY seq LIMIT 20")
         .all(member.id, member.read_seq, now - 1800000, now) as Message[];
       if (!messages.length) return result("no_pending_notification");
       const id = `batch_${randomUUID()}`;
       const update = this.db.query("UPDATE messages SET notify_batch_id=?,notify_claimed_at=? WHERE id=? AND notify_batch_id IS NULL");
       for (const message of messages) update.run(id, now, message.id);
-      return { batch: { id, member, messages }, reason: "reserved", used: stats.used + 1 };
+      return { batch: { id, member, messages }, reason: "reserved", used: limit.used + 1, retry_at: null };
     }).immediate();
   }
 }

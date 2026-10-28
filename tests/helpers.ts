@@ -4,6 +4,12 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { Project } from "../src/types.ts";
+import { createLaunch } from "../src/binding.ts";
+
+// Synthetic host relationship for in-process protocol tests; never native proof.
+export function fixtureLaunch(project: Project, session: string | null, version: string, hostPid = process.ppid) {
+  const launch = createLaunch(project, session, version); launch.attachHost(hostPid); return launch;
+}
 
 export function fixture() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "agentchat-test-")));
@@ -12,7 +18,7 @@ export function fixture() {
 }
 export function testEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  for (const key of ["CODEX_THREAD_ID", "AGENTCHAT_CLAUDE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_AGENT_ID", "AGENTCHAT_SUBAGENT", "AGENTCHAT_CODEX_BIN", "AGENTCHAT_GIT_BIN"]) delete env[key];
+  for (const key of ["CODEX_THREAD_ID", "AGENTCHAT_CLAUDE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_AGENT_ID", "AGENTCHAT_SUBAGENT", "AGENTCHAT_CODEX_BIN", "AGENTCHAT_GIT_BIN", "AGENTCHAT_LAUNCH_ID", "AGENTCHAT_LAUNCH_TOKEN", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDECODE"]) delete env[key];
   return { ...env, ...extra };
 }
 export function cli(root: string, args: string[], env = testEnv(), input?: string) {

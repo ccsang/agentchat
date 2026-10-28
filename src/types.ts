@@ -13,6 +13,10 @@ export interface Message {
 export interface Page { after: number; next_cursor: number; has_more: boolean; messages: Message[] }
 export interface Batch { id: string; member: Member; messages: Message[] }
 export interface Policy {
-  budget: number; watchSeconds: number; autoJoin: boolean; codexBin?: string;
+  budget: number; windowSeconds: number; autoJoin: boolean; codexBin?: string;
 }
-export const DEFAULT_POLICY: Policy = { budget: 20, watchSeconds: 300, autoJoin: false };
+export const DEFAULT_POLICY: Policy = { budget: 20, windowSeconds: 600, autoJoin: false };
+export interface NotificationLimit {
+  reason: "ready" | "budget_exhausted" | "minimum_interval";
+  used: number; budget: number; window_ms: number; retry_at: number | null;
+}

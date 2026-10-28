@@ -4,13 +4,15 @@ import { discoverProject } from "./project.ts";
 import { identify } from "./identity.ts";
 import { Store } from "./store.ts";
 import { errorResult, requireThat } from "./errors.ts";
-import { receiver } from "./runtime.ts";
+import { receiver, reportChannelUnavailable } from "./runtime.ts";
 import { notifyMember, paused, resume } from "./notify.ts";
 import { applyInstall, channelConfig, planInstall, preview } from "./install.ts";
 import { endHook, registerHook, waitHook } from "./hooks.ts";
 import type { HookInput } from "./hooks.ts";
 import type { Member } from "./types.ts";
 import { recordProbeReply, startProbe } from "./probe.ts";
+import { launchClaude } from "./launch.ts";
+import { waitForLaunchHost } from "./binding.ts";
 
 const HELP = `AgentChat ${version}
 Local project chat for coding agents. Output is JSON unless --help/--version is used.
@@ -23,13 +25,15 @@ Daily commands (project and native identity are discovered automatically):
   read [--new | --after SEQ | --id ID | --mark SEQ] [--limit 20]
 
 Setup / diagnostics:
-  install [--apply] [--auto-join | --no-auto-join] [--budget N] [--watch-seconds N] [--codex-bin PATH]
+  install [--apply] [--auto-join | --no-auto-join] [--budget N] [--window-seconds N] [--codex-bin PATH]
   uninstall [--apply]                 Remove only owned config; keep history.
   doctor                             Report current identity and receiver evidence.
   probe [--to NAME|ID]                Native nonce probe; may use model quota.
   notify resume [--to NAME|ID]        Resume future notifications, never reset old attempts.
-  notify claude-channel              Optional one-way MCP channel, exact own session only.
-  channel-config [--apply]           Prepare a session-specific Channels fallback config.
+  notify unavailable [--to NAME|ID]   Record an observed native Channel-unavailable status.
+  notify claude-channel              Session-owned one-way MCP Channel; launched by Claude.
+  channel-config [--to NAME|ID] [--apply]  Prepare an exact-session Claude resume launcher.
+  launch claude [--to NAME|ID]        User-terminal entry; host consent remains interactive.
 
 Advanced / testing: --project DIR, --room DIR, --as MEMBER; join --generic --name NAME.
 Normal onboarding never requires the user to copy these parameters or a native UUID.
@@ -60,14 +64,14 @@ export async function runCli(args: readonly string[]): Promise<number> {
       id: { type: "string" }, text: { type: "string" }, stdin: { type: "boolean" }, new: { type: "boolean" },
       after: { type: "string" }, limit: { type: "string" }, mark: { type: "string" }, json: { type: "boolean" },
       apply: { type: "boolean" }, "auto-join": { type: "boolean" }, "no-auto-join": { type: "boolean" }, budget: { type: "string" },
-      "watch-seconds": { type: "string" }, "codex-bin": { type: "string" }, "agentchat-managed": { type: "string" },
+      "window-seconds": { type: "string" }, "codex-bin": { type: "string" }, "agentchat-managed": { type: "string" },
     } });
     const command = p[0]; hook = command === "hook";
-    requireThat(p.length === (hook || command === "notify" ? 2 : 1), "E_USAGE", "Unexpected positional arguments");
+    requireThat(p.length === (hook || command === "notify" || command === "launch" ? 2 : 1), "E_USAGE", "Unexpected positional arguments");
     const specific: Record<string, string[]> = {
       join: ["name", "generic"], members: [], send: ["to", "reply-to", "notify", "id", "text", "stdin"],
-      read: ["new", "after", "id", "mark", "limit"], install: ["apply", "auto-join", "no-auto-join", "budget", "watch-seconds", "codex-bin"],
-      uninstall: ["apply"], doctor: [], probe: ["to"], notify: ["to"], hook: ["agentchat-managed"], "channel-config": ["apply"],
+      read: ["new", "after", "id", "mark", "limit"], install: ["apply", "auto-join", "no-auto-join", "budget", "window-seconds", "codex-bin"],
+      uninstall: ["apply"], doctor: [], probe: ["to"], notify: ["to"], hook: ["agentchat-managed"], "channel-config": ["apply", "to"], launch: ["to"],
     };
     const allowed = new Set(["project", "room", "as", "json", ...(specific[command ?? ""] ?? [])]);
     for (const key of Object.keys(v)) requireThat(allowed.has(key), "E_USAGE", `--${key} is not valid for ${command}`);
@@ -76,11 +80,20 @@ export async function runCli(args: readonly string[]): Promise<number> {
     if (command === "install" || command === "uninstall") {
       requireThat(!(v["auto-join"] && v["no-auto-join"]), "E_USAGE", "Choose auto-join or no-auto-join");
       const plan = await planInstall(project, { uninstall: command === "uninstall", autoJoin: v["no-auto-join"] ? false : v["auto-join"],
-        budget: number(v.budget, "budget"), watchSeconds: number(v["watch-seconds"], "watch-seconds"), codexBin: v["codex-bin"] });
+        budget: number(v.budget, "budget"), windowSeconds: number(v["window-seconds"], "window-seconds"), codexBin: v["codex-bin"] });
       result = v.apply ? applyInstall(plan) : preview(plan);
+    } else if (command === "launch") {
+      requireThat(p[1] === "claude" && !v.as, "E_USAGE", "Use launch claude with an optional exact --to member");
+      let member: Member | undefined;
+      if (v.to) { store = new Store(project.room, { readonly: true }); member = store.member(v.to);
+        requireThat(member.runtime === "claude", "E_IDENTITY", "The resume target must be a registered Claude session"); }
+      return await launchClaude(project, member);
+    } else if (command === "notify" && p[1] === "claude-channel") {
+      requireThat(!v.as && !v.to, "E_IDENTITY", "A Channel binds through its own native SessionStart handshake, never a supplied member profile");
+      const { runChannel } = await import("./channel.ts"); await runChannel(project); return 0;
     } else if (hook) {
       const input = JSON.parse(await stdin(64 * 1024)) as HookInput;
-      if (p[1] === "session-start") result = registerHook(project, input, process.env);
+      if (p[1] === "session-start") { await waitForLaunchHost(project, process.env); result = registerHook(project, input, process.env); }
       else if (p[1] === "session-end") { endHook(project, input); return 0; }
       else if (p[1] === "wait") {
         const cancel = new AbortController();
@@ -130,11 +143,11 @@ export async function runCli(args: readonly string[]): Promise<number> {
           else if (v.mark !== undefined) result = { ok: true, read_seq: store.mark(me.id, number(v.mark, "mark")!) };
           else result = { ok: true, ...store.read(number(v.after, "after") ?? me.read_seq, number(v.limit, "limit")) };
         } else if (command === "probe") result = startProbe(store, project, v.to ? store.member(v.to) : actor());
-        else if (command === "channel-config") result = channelConfig(project, actor(), !!v.apply);
+        else if (command === "channel-config") result = channelConfig(project, v.to ? store.member(v.to) : actor(), !!v.apply);
         else if (command === "notify") {
-          const me = actor();
-          if (p[1] === "resume") { const target = v.to ? store.member(v.to) : me; resume(project, target); result = { ok: true, resumed: target.id, old_reservations_preserved: true }; }
-          else if (p[1] === "claude-channel") { const { runChannel } = await import("./channel.ts"); await runChannel(project, me); return 0; }
+          const me = v.to ? store.member(v.to) : actor();
+          if (p[1] === "resume") { resume(project, me); result = { ok: true, resumed: me.id, old_reservations_preserved: true }; }
+          else if (p[1] === "unavailable") { reportChannelUnavailable(project, me); result = { ok: true, reception: receiver(project, me), old_reservations_preserved: true }; }
           else if (p[1] === "status") result = { ok: true, reception: receiver(project, me), paused: paused(project, me) };
           else requireThat(false, "E_USAGE", "Unknown notification action");
         }

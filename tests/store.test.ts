@@ -96,6 +96,17 @@ test("batch interval and durable budget do not reset across rename or reopen", (
 test("read-only opening never creates a missing room", () => {
   expect(() => new Store(join(f.root, "absent"), { readonly: true })).toThrow("Room not found"); expect(existsSync(join(f.root, "absent"))).toBe(false);
 });
+test("a spent rolling window recovers after reopen without clearing old reservations", () => {
+  const now = Date.now();
+  store.send({ from: a.id, to: b.id, notify: true, id: "window-first", body: "first", now });
+  const batch = store.claim(b.id, 1, now, 5000).batch!;
+  store.send({ from: a.id, to: b.id, notify: true, id: "window-next", body: "next", now });
+  store.close(); store = new Store(f.project.room);
+  expect(store.claim(b.id, 1, now + 4999, 5000).reason).toBe("budget_exhausted");
+  expect(store.notificationLimit(b.id, 1, now + 4999, 5000).retry_at).toBe(now + 5000);
+  expect(store.claim(b.id, 1, now + 5000, 5000).batch?.messages.map(m => m.id)).toEqual(["window-next"]);
+  expect(store.message("window-first").notify_batch_id).toBe(batch.id);
+});
 test("umask 022 cannot widen fresh room/database permissions; permissive existing DB is refused", () => {
   const previous = process.umask(0o022);
   try {

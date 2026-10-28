@@ -1,6 +1,6 @@
 {
   "name": "@ccsang/agentchat",
-  "version": "0.1.0-dev.0",
+  "version": "0.1.0-dev.1",
   "private": true,
   "description": "Lightweight local communication for coding agents, with agent-driven onboarding.",
   "type": "module",
@@ -14,7 +14,9 @@
     "build": "bun build src/cli.ts --target=bun --outdir=dist",
     "test": "bun test tests",
     "test:native": "bun run scripts/start-native-test.ts",
-    "verify:native": "bun run scripts/verify-native.ts"
+    "verify:native": "bun run scripts/verify-native.ts",
+    "test:native:idle": "bun run scripts/start-idle-test.ts",
+    "verify:native:idle": "bun run scripts/verify-idle-test.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

@@ -13,7 +13,7 @@ beforeEach(() => { f = fixture(); }); afterEach(() => f.cleanup());
 test("preview writes nothing and exposes exact owned hooks", async () => {
   const plan = await planInstall(f.project);
   expect(existsSync(f.project.room)).toBe(false); expect(existsSync(join(f.root, ".claude"))).toBe(false);
-  expect((plan.hooks.Stop as { asyncRewake: boolean }[])[0]?.asyncRewake).toBe(true);
+  expect(plan.hooks.Stop).toBeUndefined(); expect(plan.hooks.SessionStart).toBeDefined();
 });
 test("install is idempotent, preserves user hooks and never sets approval or inbound policy", async () => {
   mkdirSync(join(f.root, ".claude"));
@@ -21,7 +21,7 @@ test("install is idempotent, preserves user hooks and never sets approval or inb
   writeFileSync(join(f.root, "AGENTS.md"), "User instructions\n");
   applyInstall(await planInstall(f.project));
   const settings = JSON.parse(readFileSync(join(f.root, ".claude/settings.local.json"), "utf8"));
-  expect(settings.permissions.deny).toEqual(["Bash(curl:*)"]); expect(settings.crossSessionInbound).toBeUndefined(); expect(settings.hooks.Stop).toHaveLength(2);
+  expect(settings.permissions.deny).toEqual(["Bash(curl:*)"]); expect(settings.crossSessionInbound).toBeUndefined(); expect(settings.hooks.Stop).toHaveLength(1);
   expect((await planInstall(f.project)).changes).toHaveLength(0);
   expect(readFileSync(join(f.root, "AGENTS.md"), "utf8").startsWith("User instructions\n")).toBe(true);
 });
@@ -64,7 +64,7 @@ test("Channels config is generated from the current native identity and never sp
   expect(cli(f.root, ["install", "--apply"], env).status).toBe(0);
   expect(cli(f.root, ["join"], env).status).toBe(0);
   const plan = cli(f.root, ["channel-config"], env); expect(plan.status).toBe(0); expect(existsSync(plan.data.path)).toBe(false);
-  expect(plan.data.config.mcpServers.agentchat.env).toBeUndefined(); expect(plan.data.launch_argv).toContain(identity.session);
+  expect(plan.data.script).not.toContain("AGENTCHAT_CLAUDE_SESSION_ID"); expect(plan.data.script).toContain("launch"); expect(plan.data.resumes_exact_session).toBe(true);
   const applied = cli(f.root, ["channel-config", "--apply"], env); expect(applied.status).toBe(0); expect(existsSync(applied.data.path)).toBe(true);
   expect(applied.data.reception_verified).toBe(false);
 });
