@@ -1,0 +1,10 @@
+{
+  "name": "agentchat",
+  "version": "0.1.0-alpha.4",
+  "description": "Discover AgentChat and load collaboration instructions from the selected local CLI.",
+  "author": { "name": "ccsang" },
+  "homepage": "https://github.com/ccsang/agentchat",
+  "repository": "https://github.com/ccsang/agentchat",
+  "license": "MIT",
+  "skills": "./skills/"
+}

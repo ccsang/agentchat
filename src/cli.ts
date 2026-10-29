@@ -17,9 +17,14 @@ import { configureSocket } from "./socket-state.ts";
 import { socketBinding } from "./socket-state.ts";
 import { createRoom, legacyMember, listRooms, resolveRoom, roomExists, roomName, selectRoom, withRoomSelection } from "./rooms.ts";
 import { setupProgram } from "./program.ts";
+import { getSkill, listSkills } from "./skills.ts";
 
 const HELP = `AgentChat ${version}
-Local project chat for coding agents. Output is JSON unless --help/--version is used.
+Local project chat for coding agents. Output is JSON except help, version and skills get.
+
+Skills (read-only, no project or native identity required):
+  skills list                        List embedded skills and this CLI's version.
+  skills get [agentchat] [--json]     Read the full protocol bundled with this executable.
 
 Daily commands (project and native identity are discovered automatically):
   join [--room NAME] [--name NAME]    Join/select a room; prepare local state without changing project files.
@@ -100,6 +105,16 @@ export async function runCli(args: readonly string[]): Promise<number> {
       "window-seconds": { type: "string" }, "codex-bin": { type: "string" }, "agentchat-managed": { type: "string" },
     } });
     const command = p[0]; hook = command === "hook";
+    if (command === "skills") {
+      for (const key of Object.keys(v)) requireThat(["project", "json"].includes(key), "E_USAGE", `--${key} is not valid for skills`);
+      if (p[1] === "list" && p.length === 2) console.log(JSON.stringify(listSkills()));
+      else {
+        requireThat(p[1] === "get" && (p.length === 2 || p.length === 3), "E_USAGE", "Use skills list or skills get [agentchat] [--json]");
+        const skill = getSkill(p[2]);
+        if (v.json) console.log(JSON.stringify(skill)); else process.stdout.write(skill.content);
+      }
+      return 0;
+    }
     requireThat(p.length === (command === "room" ? p[1] === "create" || p[1] === "use" ? 3 : 2 : hook || command === "notify" || command === "launch" ? 2 : 1), "E_USAGE", "Unexpected positional arguments");
     const specific: Record<string, string[]> = {
       join: ["name", "generic"], room: [], members: [], send: ["to", "reply-to", "notify", "id", "text", "stdin"],

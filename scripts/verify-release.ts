@@ -27,6 +27,10 @@ try {
   writeFileSync(join(project, "bunfig.toml"), 'preload = ["./missing-preload-must-not-run.ts"]\n');
   assert(run(program, ["--version"]) === version, "Version mismatch");
   assert(run(program, ["--help"]).includes("AgentChat"), "Missing help");
+  const embedded = JSON.parse(run(program, ["skills", "get", "--json"]));
+  assert(embedded.version === version && embedded.content.includes(`CLI version: ${version}`), "Standalone skill/version mismatch");
+  assert(run(program, ["skills", "get"]) === embedded.content.trim(), "Standalone raw/JSON skills differ");
+  assert(!existsSync(join(project, ".agentchat")), "Reading an embedded skill initialized the project");
   const setup = JSON.parse(run(program, ["setup"])), globalCli = setup.cli;
   assert(setup.program_installed && !setup.project_initialized && !existsSync(join(project, ".agentchat")), "Program setup initialized a project");
   const wrapper = readFileSync(globalCli, "utf8");
@@ -48,6 +52,7 @@ try {
   const room = join(project, ".agentchat"), entry = join(room, "run");
   assert(!existsSync(join(room, "agentchat.js")), "Standalone install unexpectedly needs a JS source bundle");
   assert(run(entry, ["--version"]) === version, "Installed entry needs a development runtime");
+  assert(JSON.parse(run(entry, ["skills", "get", "--json"])).sha256 === embedded.sha256, "Pinned entry reads a different CLI's skill");
   assert(invoke(["install"]).changes.length === 0, "Repeated installation is not idempotent");
   const settings = JSON.parse(readFileSync(join(project, ".claude/settings.local.json"), "utf8"));
   const hook = settings.hooks.SessionStart[0].hooks[0];
@@ -84,6 +89,6 @@ try {
   assert(readFileSync(join(project, "AGENTS.md"), "utf8") === "Existing project instructions\n", "Uninstall removed user instructions");
   assert(existsSync(join(room, "chat.db")), "Uninstall deleted history");
   console.log(JSON.stringify({ ok: true, version, platform: process.platform, arch: process.arch,
-    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "program_setup_once", "preserve_unrelated_command", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "idempotency", "hooks", "launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
+    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "idempotency", "hooks", "launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
     native_reception_verified: false }));
 } finally { rmSync(root, { recursive: true, force: true }); }

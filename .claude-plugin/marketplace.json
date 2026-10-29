@@ -1,0 +1,8 @@
+{
+  "name": "agentchat",
+  "owner": { "name": "ccsang" },
+  "metadata": { "description": "AgentChat skills for local coding-agent collaboration." },
+  "plugins": [
+    { "name": "agentchat", "source": "./plugins/agentchat", "description": "Local coding-agent communication through AgentChat." }
+  ]
+}

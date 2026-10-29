@@ -2,14 +2,14 @@
 
 ## 当前能力
 
-当前 Alpha `0.1.0-alpha.3` 将本地运行状态和项目文件集成分开。默认 `join` / `room use` 不修改 AGENTS.md、CLAUDE.md、hooks 或 Git exclude；Git 项目的状态写入 Git 元数据目录，非 Git 项目使用 .agentchat。安装包自带运行环境。
+当前 Alpha `0.1.0-alpha.4` 提供插件薄 skill 和 CLI 内置完整规范。本文负责安装、升级与旧版本兼容；支持该命令时，操作规范以实际执行的 CLI 的 `skills get` 输出为准。默认 `join` / `room use` 不修改 AGENTS.md、CLAUDE.md、hooks 或 Git exclude；Git 项目的状态写入 Git 元数据目录，非 Git 项目使用 .agentchat。安装包自带运行环境。
 
 先遵守用户本次范围：只安装程序就安装后停止；只建房间就 room create 后停止，不自动 join 或 room use。只有用户要求加入或切换房间才执行对应操作。长期写入项目指令、启用 hooks 都是独立的明确选择，不能从“安装工具”“建房”“加入”推断授权。
 
 首次接入按以下步骤由 agent 操作，用户无需复制 room 或 UUID：
 
-1. 检查 `agentchat` 或默认 `$HOME/.local/bin/agentchat` 的 --version。安全的默认加入从 0.1.0-alpha.3 开始；Alpha 1/2 的 join 会改项目文件，必须先升级，不能把本文保证套用给旧二进制。也要检查旧项目 run 的版本；首次更新时使用全局新版 join 刷新本地入口，随后再用项目 run。支持 macOS/Linux（glibc）arm64/x64，Windows 尚无安装包。
-2. 尚未安装或明确升级时，从 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.3/install.sh` 下载到 agent 临时目录，阅读后执行 `sh <安装器>`。只使用成功下载的 HTTPS 内容。它校验压缩包和程序，提供全局命令，不初始化业务项目，不修改 shell 配置、网关或审批。用户只要求安装时，到此停止。
+1. 先找通知给出的确切 Tool argv，或当前项目自己的 run，再检查 `agentchat` / 默认 `$HOME/.local/bin/agentchat`。读取选定入口的 --version 和 skills get；该只读命令不需要项目或原生身份。安全的默认加入从 Alpha 3 开始，skills get 从 Alpha 4 开始；不能把新规范套给旧二进制。支持 macOS/Linux（glibc）arm64/x64，Windows 尚无安装包。
+2. 尚未安装或明确升级时，从 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.4/install.sh` 下载到 agent 临时目录，阅读后执行 `sh <安装器>`。只使用成功下载的 HTTPS 内容。它校验压缩包和程序，提供全局命令，不初始化业务项目，不修改 shell 配置、网关或审批。只安装程序时，到此停止。已有项目的 run 固定引用旧版本，需用全局新版的 --project <根目录> install 预览，再在本地入口升级范围内追加 --apply；随后重新读取项目 run 的 skills get，不依赖重复 join 来更新已初始化入口。
 3. 用户要求加入时，在业务项目目录执行新版 `"<cli>" join`，或传内部 --project 绝对目录。首次仅准备本地数据、run 和私有启动入口，不读取或修补项目指令、hooks 配置；已存在的旧集成也不自动删除。默认 install 是本地入口的显式预览/修复方式。版本、路径等参数由 agent 处理。
 4. 每个 agent 必须从自己的原生会话 `join`。Codex 从环境识别 thread；Claude 从 hook 环境或自身 socket 元数据识别准确会话。身份缺失时停止并报告，不替其他会话声明身份。查看返回的 members、initialization、reception；当前房间默认是 `default` 或该原生会话上次选择的房间。
 5. 自动收信单独配置。用户明确选择 Channel 时，需要先明确启用可选 hooks（见下一节），然后在原 Claude 会话运行 channel-config --apply 准备准确恢复入口；可用 --to 为确切成员准备。由用户在自己的终端恢复同一会话并完成宿主 Channel/MCP 确认，不能在 agent shell 开嵌套业务会话。用户选择 socket 实验时按本文末节操作，支持的原生 socket 身份不依赖项目 hooks 或指令文件。
@@ -18,6 +18,30 @@
 只有完成当前所选接收实例的 nonce 回传才能报告自动接收已验证。Channel 随原会话持续运行，空闲不调用模型、不发心跳消息，也不要求用户续期。socket 实验目前仅验收了 macOS arm64、Claude Code 2.1.312 / peerProtocol 1 的交互 CLI；其他原生组合不能仅凭安装成功报告支持。
 
 程序入口默认在 `~/.local/bin/agentchat`，项目入口仍会固定引用初始化时的版本缓存；不要删除仍被项目使用的缓存。源码用户 `bun install --frozen-lockfile --ignore-scripts` 后直接用 `bun run bin/agentchat --project <业务项目> join`。升级和卸载见 [分发说明](docs/distribution.md)。
+
+## 插件与版本匹配规范
+
+插件为当前用户的各项目提供薄 skill。用户要求安装插件或完整插件接入时，为其使用的客户端分别安装；只要求安装程序、创建房间或加入时，不额外修改宿主插件配置。
+
+Claude Code 使用仓库 marketplace，命令在用户级安装：
+
+```sh
+claude plugin marketplace add ccsang/agentchat
+claude plugin install agentchat@agentchat --scope user
+```
+
+Codex 使用同仓库的 Codex marketplace；支持插件的本地客户端可由 agent 执行：
+
+```sh
+codex plugin marketplace add ccsang/agentchat
+codex plugin add agentchat@agentchat
+```
+
+也可在宿主插件界面从该 marketplace 选择 AgentChat。安装后按宿主提示重新加载或开启后续会话；CLI/插件识别成功不等于模型已触发 skill 或自动收信通过。插件不含自动执行的 hooks、MCP 服务或安装脚本；用户实际要求使用时，skill 才查找本地工具并读取 skills get。支持情况以宿主实际版本为准，不自动另开业务会话。
+
+薄 skill 和 CLI 分别更新。薄 skill 中不复制完整协议、不固定业务项目路径、房间或成员；完整协议随 CLI 编译进独立程序。skills list 返回内置规范列表；skills get [agentchat] 返回 Markdown，追加 --json 返回名称、CLI 版本、内容及 SHA-256。两条命令无需初始化项目、加入房间或联网，也不会安装 skill。
+
+每次激活以及更换/升级可执行文件后，先读取实际执行入口的规范。旧 CLI 缺少该命令时按上面的升级流程处理；不要读取新版全局规范后继续操作旧项目入口。CLI 升级不改写插件缓存；插件升级也不替换所有项目的固定 CLI。
 
 ## 可选的长期项目集成
 

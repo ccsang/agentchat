@@ -1,5 +1,13 @@
 # 实施顺序与验收
 
+## Alpha 4：插件薄 skill 与 CLI 规范
+
+- [x] 一份共享薄 skill，Claude/Codex marketplace 和便携/兼容插件描述。
+- [x] skills list / skills get [agentchat] / --json，无项目/身份的只读发现与规范输出。
+- [x] 完整规范编译进实际 CLI，输出版本和内容哈希；切换可执行文件必须重读。
+- [x] 文档明确首次安装、旧入口升级、插件与 CLI 的独立更新及用户范围。
+- [x] 139 项自动化测试；独立程序、宿主插件识别与公开下载结果见 verification.md 和发布流水线。
+
 ## Alpha 3：默认加入不改项目文件
 
 - [x] 默认 join / room use / install 只准备本地运行状态，不读取指令、hooks 或 Git exclude。
