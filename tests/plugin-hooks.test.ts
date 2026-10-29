@@ -14,7 +14,7 @@ beforeEach(() => { f = fixture(); host = fixture(); }); afterEach(() => { f.clea
 function input(event = "SessionStart", session = randomUUID()) { return { hook_event_name: event, session_id: session, cwd: f.root }; }
 const envFor = () => testEnv({ CLAUDE_CONFIG_DIR: join(host.root, "claude") });
 test("plugin startup persists real hook identity without initializing an unjoined project", () => {
-  const path = join(host.root, "env"); writeFileSync(path, "export USER_RULE='keep'\n", { mode: 0o600 });
+  const path = join(host.root, "env"); writeFileSync(path, "export USER_RULE='keep'", { mode: 0o600 });
   const context = input(), env = { ...envFor(), CLAUDE_ENV_FILE: path };
   expect(pluginHook(context, "SessionStart", env)).toEqual({}); pluginHook(context, "SessionStart", env);
   expect(readFileSync(path, "utf8")).toBe(`export USER_RULE='keep'\nexport AGENTCHAT_CLAUDE_SESSION_ID='${context.session_id}'\n`);
@@ -22,7 +22,7 @@ test("plugin startup persists real hook identity without initializing an unjoine
 });
 test("plugin lifecycle auto-enrolls only initialized projects without requiring project hooks", async () => {
   applyInstall(await planInstall(f.project, { autoJoin: true }));
-  const context = input(); pluginHook(context, "SessionStart", envFor());
+  const context = { ...input(), agent_type: "custom-primary" }; pluginHook(context, "SessionStart", envFor());
   const store = new Store(f.project.room);
   try {
     const member = store.actor({ runtime: "claude", session: context.session_id });
@@ -40,7 +40,7 @@ test("auto-join opt-out and uninstall stop plugin enrollment", async () => {
 });
 test("subagent startup never leaks identity to the primary shell or creates project state", () => {
   const path = join(host.root, "env"); writeFileSync(path, "", { mode: 0o600 });
-  expect(pluginHook({ ...input(), agent_id: "child" }, "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: path })).toEqual({});
+  expect(pluginHook({ ...input(), agent_id: "child", agent_type: "custom-primary" }, "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: path })).toEqual({});
   expect(readFileSync(path, "utf8")).toBe(""); expect(readdirSync(f.root)).toEqual([]);
 });
 test("plugin wrapper forwards stdin with spaces and apostrophes and needs no external runtime", () => {

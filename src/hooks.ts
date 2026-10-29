@@ -17,7 +17,7 @@ import { standalone } from "./executable.ts";
 export interface HookInput { session_id: string; cwd: string; hook_event_name: string; agent_id?: string; agent_type?: string }
 export function validateHook(input: HookInput, project: Project, event: string): string {
   requireThat(input && typeof input.cwd === "string" && input.hook_event_name === event, "E_HOOK", "Unexpected hook event or missing cwd");
-  requireThat(!input.agent_id && !input.agent_type, "E_HOOK", "Subagent hooks do not register a primary session");
+  requireThat(!input.agent_id, "E_HOOK", "Subagent hooks do not register a primary session");
   requireThat(integrationDir(discoverProject(input.cwd)) === integrationDir(project), "E_PROJECT", "Hook context belongs to a different project");
   return sessionId(input.session_id);
 }
@@ -26,7 +26,8 @@ function persistIdentity(project: Project, session: string, env: NodeJS.ProcessE
   const file = realpathSync(env.CLAUDE_ENV_FILE); regularFile(file, false);
   requireThat(dirname(file) !== project.room, "E_HOOK", "Unexpected environment file location");
   const line = `export AGENTCHAT_CLAUDE_SESSION_ID='${session}'\n`;
-  if (!readFileSync(file, "utf8").includes(line)) appendFileSync(file, line);
+  const before = readFileSync(file, "utf8");
+  if (!before.includes(line)) appendFileSync(file, `${before && !before.endsWith("\n") ? "\n" : ""}${line}`);
 }
 export function registerHook(project: Project, input: HookInput, env: NodeJS.ProcessEnv, plugin = false): Record<string, unknown> {
   project = baseProject(project);
@@ -68,7 +69,7 @@ export function endHook(project: Project, input: HookInput, _env: NodeJS.Process
 }
 export function pluginHook(input: HookInput, event: "SessionStart" | "SessionEnd", env: NodeJS.ProcessEnv): Record<string, unknown> {
   requireThat(input && input.hook_event_name === event, "E_HOOK", "Unexpected plugin hook event");
-  if (input.agent_id || input.agent_type) return {};
+  if (input.agent_id) return {};
   const project = discoverProject(input.cwd);
   if (event === "SessionStart") return registerHook(project, input, env, true);
   endHook(project, input, env); return {};
