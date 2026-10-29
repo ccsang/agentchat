@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { applyInstall, planInstall, preview } from "../src/install.ts";
 import { integrationSettings, workspaceDir } from "../src/workspace.ts";
 import { writeJson } from "../src/files.ts";
+import { registerHook } from "../src/hooks.ts";
 import { cli, fixture, git, testEnv } from "./helpers.ts";
 
 let f: ReturnType<typeof fixture>;
@@ -60,6 +61,8 @@ test("hook integration does not read or rewrite instructions and preserves user 
   const after = JSON.parse(readFileSync(path, "utf8"));
   expect(after.hooks).toEqual({ Stop: [{ hooks: [user] }] }); expect(after.permissions.deny).toEqual(["user-rule"]);
   expect(integrationSettings(f.project)).toEqual({ instructions: false, hooks: false });
+  expect(registerHook(f.project, { session_id: randomUUID(), cwd: f.root, hook_event_name: "SessionStart" }, {})).toEqual({});
+  expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
 });
 test("legacy setup is upgraded locally without repairing or deleting its existing project files", async () => {
   applyInstall(await planInstall(f.project, { instructions: true, hooks: true }));

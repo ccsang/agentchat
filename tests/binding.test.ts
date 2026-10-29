@@ -15,7 +15,9 @@ test("each launch binds only its own SessionStart and enrolls after the trusted 
   const f = fixture(), session = randomUUID(), launch = createLaunch(f.project, session, "Claude fixture");
   try {
     expect(readLaunch(f.project, launch.env).status).toBe("pending"); expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
-    registerHook(f.project, hook(f.root, session), launch.env);
+    const context = registerHook(f.project, hook(f.root, session), launch.env).hookSpecificOutput as { additionalContext: string };
+    expect(context.additionalContext).toContain(JSON.stringify([join(f.project.room, "run"), "--project", f.root]));
+    expect(context.additionalContext).toContain("No project instruction file is required");
     const binding = readLaunch(f.project, launch.env); expect(binding.session).toBe(session); expect(binding.status).toBe("bound");
     const store = new Store(f.project.room); expect(store.members()).toHaveLength(1); expect(store.actor({ runtime: "claude", session }).session_ref).toBe(session); store.close();
     expect(statSync(join(f.project.room, "launches", `${launch.binding.id}.json`)).mode & 0o777).toBe(0o600);
