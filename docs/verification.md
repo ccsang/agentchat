@@ -2,6 +2,16 @@
 
 日期：2026-10-28。开发环境：macOS arm64、Bun 1.3.14。
 
+## Alpha 3：默认加入不改项目文件（2026-10-29）
+
+`0.1.0-alpha.3` 将本地运行状态和项目文件集成分开。默认 join / room use / install 不读取或改写 AGENTS.md、CLAUDE.md、.claude/settings.local.json 或 Git exclude；--instructions 与 --hooks 独立预览、启用和移除。旧版本只升级私有入口，不自动修补或删除原有集成。
+
+本机 135 项测试、类型检查与构建通过。新增回归在 Git 中提交指令和损坏的 hooks 文件后执行首次加入、重复加入、建房和切房，核对 git status 始终干净及 Git exclude 字节不变；同时覆盖指令符号链接、损坏管理块、可选集成独立启停、过期计划不覆盖新的集成选择、旧版本升级保留文件、移除 hooks 后 Channel 停止，以及新 worktree 不继承其他工作区的集成选择。
+
+本机独立程序在不含外部 Bun 的 PATH 中完成首次加入仅写本地状态、可选集成预览无写入及显式应用、后续加入/切房不重写配置、hooks/启动入口、SQLite 收发与 mark、卸载保留历史。四平台由[发布流水线](https://github.com/ccsang/agentchat/actions/workflows/ci.yml)执行同样检查，全部通过后才发布安装包。公开下载验收另使用两个全新 Git 项目，重点核对默认加入后已提交项目文件保持不变。
+
+本轮测试均使用合成身份和协议模拟，没有向真实原生会话发送通知，也没有重新进行长期空闲验收。此前真实收信证据仅适用于下列原版本、原会话、default 房间和接收实例。
+
 ## Alpha 2：全局程序与命名房间（2026-10-29）
 
 `0.1.0-alpha.2` 将默认安装器改为只安装一次程序，首次 join 自动初始化项目，增加 room create/list/current/use。旧 default 数据库不移动；命名房间分别保存成员、消息和游标。

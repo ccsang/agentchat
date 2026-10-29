@@ -126,9 +126,9 @@ Codex 直接通知若触发间隔限制，本次只存消息并报告通知被�
 
 ### Claude
 
-默认使用由 Claude 启动并通过 stdio 连接的单向 Channel，持续检查明确发给自己的通知候选，空闲约每秒查询一次，不调用模型。读取和回复仍走 CLI，不另建 MCP 收发工具，不声明权限批准转发。stdout 专用于 MCP，诊断写 stderr。
+用户明确启用可选 hooks 和宿主功能后，使用由 Claude 启动并通过 stdio 连接的单向 Channel，持续检查明确发给自己的通知候选，空闲约每秒查询一次，不调用模型。默认 join 不启用它。读取和回复仍走 CLI，不另建 MCP 收发工具，不声明权限批准转发。stdout 专用于 MCP，诊断写 stderr。
 
-SessionStart / SessionEnd 只登记和清理原生身份。安装器移除自己的 Stop asyncRewake 长监听，保留其他 hooks；已经加载的旧 `hook wait` 入口返回正常退出，不与 Channel 竞争、不消耗通知额度。没有 300 秒收件窗口或用户续期操作。
+SessionStart / SessionEnd 只登记和清理原生身份。显式管理 hooks 时移除自己的 Stop asyncRewake 长监听，保留其他 hooks；已经加载的旧 `hook wait` 入口返回正常退出，不与 Channel 竞争、不消耗通知额度。没有 300 秒收件窗口或用户续期操作。
 
 #### 启动与会话绑定
 
@@ -152,7 +152,7 @@ SessionStart / SessionEnd 只登记和清理原生身份。安装器移除自己
 
 ## 7. 安装与用户体验
 
-ONBOARDING.md 面向 agent。安装器负责确定性的预检、配置预览、备份、幂等更新和卸载，只管理自己的块，保留现有 AGENTS.md、CLAUDE.md 和 hook 内容。
+ONBOARDING.md 面向 agent。安装程序只准备本机可复用的工具；默认 join/install 只准备本地运行状态。项目文件集成必须通过独立的 --instructions / --hooks 显式选择，提供预览、备份、幂等更新和卸载，只管理自己的块，保留用户内容。
 
 默认在用户提出协作需求时接入；不让用户记复杂命令，不把第一次提供安装入口省略为“天然知道工具”。项目开启自动加入后才为新的主会话自动登记。
 
@@ -205,7 +205,7 @@ socket 的验证证据按具体进程/socket 实例存放。CLI 回传同时要�
 
 本节覆盖此前每项目手动安装、单一聊天室的交互。全局程序只安装一次，固定版本二进制缓存由多个项目共用，`~/.local/bin/agentchat` 是自己的命令入口；安装程序不更改项目。
 
-`join` 先验证原生身份和目标房间，在用户已授权加入的项目中自动初始化管理块、hooks 与启动入口。工作区安装元数据按项目根目录保存，同一仓库的 worktree 各有自己的项目配置，共用房间。后续 join 不重写配置；旧版本安装首次加入时升级路由管理块，消息库原位保留。显式 install 保留为预览、修复与升级入口。
+Alpha 2 的 `join` 在验证原生身份和目标房间后自动初始化管理块、hooks 与启动入口。该项目文件写入行为已由下节 Alpha 3 覆盖。工作区安装元数据按项目根目录保存，同一仓库的 worktree 各有自己的运行状态，共用房间；消息库原位保留。
 
 集成目录仍为 common-dir/agentchat 或非 Git 项目的 .agentchat。default 的 SQLite 路径不变，命名房间位于 rooms/<名称>/chat.db。每库仍只有 members/messages 两张表，独立成员 ID、消息 ID、游标、预算和通知预留；没有新增业务实体或常驻服务。
 
@@ -214,3 +214,15 @@ socket 的验证证据按具体进程/socket 实例存放。CLI 回传同时要�
 一个物理 Channel 由项目内原生 UUID 锁唯一拥有。它根据自己的选择文件切换 SQLite 和房间成员锁，清理旧房间存活信息，保留消息预留和证明；进程 token/启动握手仍属于原客户端。旧版活跃 Channel 无法观察选择时拒绝切房，要求通过新版入口恢复，不能把切房当成自动启动另一客户端。
 
 socket 端点按项目原生会话复用此前的明确选择，凭据不复制进配置；每个房间的 nonce 证明仍单独关联该房间消息。旧版默认房间绑定按准确 session 读取兼容，不复制历史 nonce。未知通知暂停按原生会话及适配器跨房间生效，解除只影响未来通知，旧预留不变。peer 的已验证项目目录参与缓存校验，复制绑定到另一个项目不能借已保存 cwd 跳过项目检查。
+
+## 13. 默认加入仅准备本地状态（Alpha 3）
+
+`join`、`room use` 和不带集成标志的 `install` 不读取或改写 AGENTS.md、CLAUDE.md、.claude/settings.local.json 或 Git exclude。即使这些文件已入库、存在旧管理块、是符号链接或 JSON 已损坏，默认加入也只在 Git 元数据目录的 agentchat 中准备运行文件和数据；非 Git 项目使用 .agentchat。新建或切换房间仍不重新安装程序。
+
+`install --instructions` 只管理两个指令文件；`install --hooks` 只管理 Claude 本地设置及 Git 本地忽略块。两者均先预览，--apply 才应用，可独立组合。安装元数据使用 setupVersion 3 和工作区独立的 integration 标志，不把另一个 worktree 的选择当作本工作区的授权。后续默认加入不以指令或 hooks 文件存在为前提，也不隐式修复已明确启用的集成。
+
+`uninstall --instructions` / `uninstall --hooks` 只移除指定集成并保留本地运行能力，移除 hooks 后新版 Channel 停止。无标志的 uninstall 停用当前工作区并移除其已启用的自有集成，保留消息与全局程序。旧客户端已经加载的配置可能需要用户重新加载；工具不关闭业务会话。
+
+升级旧项目时仅更新私有运行入口和安装元数据，保留旧管理块和 hooks，不自动修补或删除。需要清理或升级旧集成时，必须显式选择相应标志。安全默认从 0.1.0-alpha.3 开始；必须先升级全局程序，再用新版 join 刷新旧项目入口，不能用新文档推定旧二进制的行为。
+
+通知自身携带准确 CLI argv、项目、房间和消息 ID，接收方不依赖业务项目存在 ONBOARDING.md 或指令管理块。Codex queue 和已明确启用的 socket 实验不以项目指令或 hooks 为前提；Channel 的准确会话绑定仍需明确启用 hooks 及宿主功能。自动接收仍以当前接收实例的 nonce 回传为准。

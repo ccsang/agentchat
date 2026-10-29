@@ -19,5 +19,5 @@ export function setupProgram(): Record<string, unknown> {
   const executable = realpathSync(process.execPath), quoted = `'${executable.replaceAll("'", "'\\''")}'`;
   atomicWrite(cli, `#!/bin/sh\n${marker}exec ${quoted} "$@"\n`, 0o755);
   return { ok: true, version, cli, executable, program_installed: true, project_initialized: false,
-    next: "Run this command with join inside a project; the first join initializes that project automatically" };
+    next: "Run join inside a project for local state only. Project instructions and hooks require separate explicit integration flags" };
 }

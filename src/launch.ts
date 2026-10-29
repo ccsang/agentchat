@@ -9,7 +9,7 @@ import { socketBinding } from "./socket-state.ts";
 import { installedCommand, installedToolExists } from "./executable.ts";
 import { integrationDir } from "./project.ts";
 import { roomName } from "./rooms.ts";
-import { workspaceDir } from "./workspace.ts";
+import { integrationSettings, workspaceDir } from "./workspace.ts";
 
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 export function launcherScript(project: Project, member?: Member, command = installedCommand(project)): string {
@@ -19,6 +19,7 @@ export function launcherScript(project: Project, member?: Member, command = inst
 export function channelConfig(project: Project, member: Member, apply: boolean): Record<string, unknown> {
   requireThat(member.runtime === "claude" && member.session_ref, "E_IDENTITY", "Prepare a launcher for one exact registered Claude session");
   requireThat(installedToolExists(project) && !uninstalled(project), "E_CONFIG", "Install the project CLI before preparing Claude");
+  requireThat(socketBinding(project, member)?.enabled || integrationSettings(project).hooks, "E_CONFIG", "Channel requires opt-in project hooks: preview install --hooks, then apply only when the user requests that integration");
   const path = join(workspaceDir(project), "launchers", roomName(project), `${member.name}.command`), script = launcherScript(project, member);
   if (apply) { privateDirectory(join(workspaceDir(project), "launchers", roomName(project))); atomicWrite(path, script, 0o700); }
   return { ok: true, applied: apply, path, script, member_id: member.id, resumes_exact_session: true,
@@ -30,11 +31,12 @@ export async function launchClaude(project: Project, member?: Member): Promise<n
   requireThat(process.stdin.isTTY && process.stdout.isTTY && !process.env.CODEX_THREAD_ID && !process.env.CLAUDECODE,
     "E_HOST_ACTION", "Run the prepared launcher in the user's terminal; an agent must not start a nested or replacement business session");
   requireThat(!uninstalled(project) && installedToolExists(project), "E_CONFIG", "Install this project before launching Claude");
+  const useSocket = !!member && socketBinding(project, member)?.enabled;
+  requireThat(useSocket || integrationSettings(project).hooks, "E_CONFIG", "Channel requires explicitly enabled project hooks; use install --hooks to preview the optional integration");
   const bin = Bun.which("claude"); requireThat(bin, "E_HOST", "Claude Code is not available on PATH");
   const version = spawnSync(bin, ["--version"], { encoding: "utf8", timeout: 3000, killSignal: "SIGKILL" });
   requireThat(version.status === 0, "E_HOST", "Cannot inspect the Claude Code executable");
   const launch = createLaunch(project, member?.session_ref ?? null, version.stdout.trim());
-  const useSocket = !!member && socketBinding(project, member)?.enabled;
   const env: NodeJS.ProcessEnv = { ...process.env, ...launch.env };
   for (const key of ["CODEX_THREAD_ID", "AGENTCHAT_CLAUDE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_AGENT_ID", "AGENTCHAT_SUBAGENT"]) delete env[key];
   try {

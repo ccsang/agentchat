@@ -15,7 +15,9 @@ test("each launch binds only its own SessionStart and enrolls after the trusted 
   const f = fixture(), session = randomUUID(), launch = createLaunch(f.project, session, "Claude fixture");
   try {
     expect(readLaunch(f.project, launch.env).status).toBe("pending"); expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
-    registerHook(f.project, hook(f.root, session), launch.env);
+    const context = registerHook(f.project, hook(f.root, session), launch.env).hookSpecificOutput as { additionalContext: string };
+    expect(context.additionalContext).toContain(JSON.stringify([join(f.project.room, "run"), "--project", f.root]));
+    expect(context.additionalContext).toContain("No project instruction file is required");
     const binding = readLaunch(f.project, launch.env); expect(binding.session).toBe(session); expect(binding.status).toBe("bound");
     const store = new Store(f.project.room); expect(store.members()).toHaveLength(1); expect(store.actor({ runtime: "claude", session }).session_ref).toBe(session); store.close();
     expect(statSync(join(f.project.room, "launches", `${launch.binding.id}.json`)).mode & 0o777).toBe(0o600);
@@ -81,7 +83,7 @@ test("upgrade removes only managed Stop listeners and migrates a lifetime budget
       { type: "command", command: "old", args: ["--agentchat-managed=v1", "hook", "wait"], asyncRewake: true },
       { type: "command", command: "user-custom-hook" },
     ] }] } }));
-    applyInstall(await planInstall(f.project));
+    applyInstall(await planInstall(f.project, { hooks: true }));
     const settings = JSON.parse(readFileSync(join(f.root, ".claude/settings.local.json"), "utf8"));
     expect(settings.hooks.Stop[0].hooks).toEqual([{ type: "command", command: "user-custom-hook" }]);
     const config = JSON.parse(readFileSync(join(f.project.room, "config.json"), "utf8"));
@@ -91,7 +93,7 @@ test("upgrade removes only managed Stop listeners and migrates a lifetime budget
 test("a peer can prepare an exact Claude resume entry, without impersonating or launching the native session", async () => {
   const f = fixture();
   try {
-    applyInstall(await planInstall(f.project)); const store = new Store(f.project.room, { create: true });
+    applyInstall(await planInstall(f.project, { hooks: true })); const store = new Store(f.project.room, { create: true });
     const member = store.join({ runtime: "claude", session: randomUUID() }); store.close();
     const result = cli(f.root, ["channel-config", "--to", member.id, "--apply"], testEnv({ CODEX_THREAD_ID: randomUUID() }));
     expect(result.status).toBe(0); expect(result.data.script).toContain(member.id); expect(result.data.script).not.toContain("AGENTCHAT_CLAUDE_SESSION_ID");
