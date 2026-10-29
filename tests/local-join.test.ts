@@ -48,6 +48,14 @@ test("instruction integration is explicit, independent of hooks, and can be remo
   expect(integrationSettings(f.project)).toEqual({ instructions: false, hooks: false });
   expect(cli(f.root, ["join", "--generic", "--name", "operator"]).status).toBe(0);
 });
+test("a stale local-only plan cannot erase a newly enabled optional integration", async () => {
+  applyInstall(await planInstall(f.project));
+  const stale = await planInstall(f.project);
+  applyInstall(await planInstall(f.project, { hooks: true }));
+  expect(() => applyInstall(stale)).toThrow("integration selection changed since preview");
+  expect(integrationSettings(f.project)).toEqual({ instructions: false, hooks: true });
+  expect(JSON.parse(readFileSync(join(f.root, ".claude/settings.local.json"), "utf8")).hooks.SessionStart).toHaveLength(1);
+});
 test("hook integration does not read or rewrite instructions and preserves user hooks on removal", async () => {
   const rules = "<!-- agentchat:begin -->\nuser-owned incomplete block\n";
   writeFileSync(join(f.root, "AGENTS.md"), rules);

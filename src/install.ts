@@ -18,7 +18,7 @@ const END = "<!-- agentchat:end -->";
 const MANAGED = "--agentchat-managed=v1";
 type Json = Record<string, unknown>;
 interface Change { path: string; before: string | null; after: string; mode: number }
-export interface InstallPlan { project: Project; changes: Change[]; hooks: Json; uninstall: boolean; integration: Integration; requested: Integration; removeIntegration: boolean }
+export interface InstallPlan { project: Project; changes: Change[]; hooks: Json; uninstall: boolean; integration: Integration; previous: Integration; requested: Integration; removeIntegration: boolean }
 function hash(text: string | null) { return text === null ? null : createHash("sha256").update(text).digest("hex"); }
 function current(path: string): string | null {
   if (!pathPresent(path)) return null;
@@ -124,7 +124,7 @@ export async function planInstall(project: Project, options: { uninstall?: boole
     add(join(project.room, "claude.command"), launcherScript(project, undefined, command), 0o700);
     add(join(workspaceDir(project), "claude.command"), launcherScript(project, undefined, command), 0o700);
   }
-  return { project, changes, hooks, uninstall, integration, requested, removeIntegration };
+  return { project, changes, hooks, uninstall, integration, previous, requested, removeIntegration };
 }
 export function preview(plan: InstallPlan): Record<string, unknown> {
   return { ok: true, applied: false, project: plan.project.root, cli: join(plan.project.room, "run"), uninstall: plan.uninstall,
@@ -141,6 +141,9 @@ export function applyInstall(plan: InstallPlan): Record<string, unknown> {
   const release = tryLock(join(plan.project.room, "install.lock"));
   requireThat(release, "E_BUSY", "Another installer is running");
   try {
+    const latest = integrationSettings(plan.project);
+    requireThat(latest.instructions === plan.previous.instructions && latest.hooks === plan.previous.hooks,
+      "E_CONFLICT", "Project integration selection changed since preview; generate a new plan");
     for (const change of plan.changes) requireThat(current(change.path) === change.before, "E_CONFLICT", `File changed since preview: ${change.path}`);
     const backup = join(plan.project.room, "backups", randomUUID());
     if (plan.changes.length) writeJson(join(backup, "before.json"), plan.changes.map(({ path, before, mode }) => ({ path, before, mode })));
