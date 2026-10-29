@@ -1,6 +1,6 @@
 # Claude 原生 socket 实验
 
-用户在当前 Channel 不可用后，明确选择保留网关并开发此适配。本实验直接使用已打开的原生收件箱，默认 Channel 路径仍单独保留，不做失败后的自动切换。
+此适配最初由用户选择保留网关并开发。Alpha 5 按用户新要求移除 Channel，Claude join 默认尝试绑定准确的原生 socket；协议仍按实验接口锁定版本。Codex 继续使用 queue，没有新增常驻收件进程。
 
 ## 范围
 
@@ -10,11 +10,13 @@
 
 ## 使用
 
-由 agent 对准确已登记的 Claude 执行 `socket-config --apply`；协作方可用 `--to` 指定确切成员。无 apply 只预览，且不发送通知。目标按已登记原生 UUID 匹配唯一有效 peer，用户无需搬运 UUID 或 socket 路径。
+join 自动尝试绑定当前准确会话，不支持的版本保留主动读写并报告原因。需要修复时，由 agent 对准确已登记的 Claude 执行 `socket-config --apply`；协作方可用 `--to` 指定确切成员。无 apply 只预览，且不发送通知。目标按已登记原生 UUID 匹配唯一有效 peer，用户无需搬运 UUID 或 socket 路径。
 
-在用户授权的真实联调范围执行 `probe`，nonce 必须通过该实例自己的工具上下文回传。`doctor` 的 mode 为 claude-socket-experimental，验证为 current_socket 时才证明当前实例通过探针。将来若恢复了原会话而进程已变，应再次显式绑定并验证；不猜最近会话，也不靠同名接管。
+在用户授权的真实联调范围执行 `probe`，nonce 必须通过该实例自己的工具上下文回传。`doctor` 的 mode 为 claude-socket-experimental，验证为 current_socket 时才证明当前实例通过探针。将来若恢复了原会话而进程已变，需要该新进程自己的 SessionStart 或再次显式绑定，并重新验证；不猜最近会话，也不靠同名接管。
 
-可用 `socket-config --disable --apply` 退出实验，不删除历史或重置预留，不启动替代客户端。原 Channel 的未知尝试需要单独核对，不因实验选择而被重发。
+Claude 用户级插件自动加载生命周期 hooks，仅在已初始化且开启 autoJoin 的工作区自动登记，不更改业务项目文件。autoJoin 默认关闭；无关项目及未初始化 worktree 不加入。SessionEnd 将准确会话标为 inactive。
+
+可用 `socket-config --disable --apply` 停用接收，后续 join 不会自动重新启用；`install --no-auto-join --apply` 停止未来自动登记。两者均不删除历史或重置预留，不启动替代客户端。原 Channel 的未知尝试需要单独核对，不因实验选择而被重发。
 
 ## 实际协议与校验
 

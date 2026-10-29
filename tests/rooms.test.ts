@@ -115,7 +115,7 @@ test("two first joins can initialize one project concurrently without losing eit
   expect(results.map(result => ({ status: result.status, error: result.error }))).toEqual([{ status: 0, error: "" }, { status: 0, error: "" }]);
   expect(cli(f.root, ["members"]).data.members).toHaveLength(2);
 });
-test("an older live Channel must be restored through the updated launcher before switching rooms", () => {
+test("legacy Channel state does not force a restore or prevent switching rooms", () => {
   const store = new Store(f.project.room, { create: true });
   const member = store.join({ runtime: "claude", session: randomUUID() });
   createRoom(f.project, "review"); privateDirectory(join(f.project.room, "listeners"));
@@ -124,8 +124,8 @@ test("an older live Channel must be restored through the updated launcher before
   try {
     const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: member.session_ref! });
     const result = cli(f.root, ["room", "use", "review"], env);
-    expect(result.status).toBe(2); expect(result.data.error.code).toBe("E_RECEIVER");
-    expect(cli(f.root, ["room", "current"], env).data.current).toBe("default");
+    expect(result.status).toBe(0); expect(result.data.reception.transport_alive).toBe(false);
+    expect(cli(f.root, ["room", "current"], env).data.current).toBe("review");
     expect(existsSync(join(f.root, "AGENTS.md"))).toBe(false);
   } finally { release(); store.close(); }
 });

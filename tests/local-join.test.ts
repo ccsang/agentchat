@@ -85,15 +85,15 @@ test("legacy setup is upgraded locally without repairing or deleting its existin
   expect(readFileSync(join(f.root, ".claude/settings.local.json"), "utf8")).toBe("User changed this to invalid JSON");
   expect(integrationSettings(f.project)).toEqual({ instructions: true, hooks: true });
 });
-test("joining does not implicitly enable Channel hooks, even when instructions were explicitly installed", () => {
+test("Channel stays retired even when legacy project hooks were explicitly installed", () => {
   const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: randomUUID() });
   expect(cli(f.root, ["join"], env).status).toBe(0);
-  expect(cli(f.root, ["channel-config", "--apply"], env).data.error.code).toBe("E_CONFIG");
+  expect(cli(f.root, ["channel-config", "--apply"], env).data.error.code).toBe("E_RETIRED");
   expect(existsSync(join(f.root, ".claude"))).toBe(false);
   expect(cli(f.root, ["install", "--instructions", "--apply"], env).status).toBe(0);
-  expect(cli(f.root, ["channel-config", "--apply"], env).data.error.code).toBe("E_CONFIG");
+  expect(cli(f.root, ["channel-config", "--apply"], env).data.error.code).toBe("E_RETIRED");
   expect(cli(f.root, ["install", "--hooks", "--apply"], env).status).toBe(0);
-  expect(cli(f.root, ["channel-config", "--apply"], env).status).toBe(0);
+  expect(cli(f.root, ["channel-config", "--apply"], env).data.error.code).toBe("E_RETIRED");
 });
 test("a new worktree does not inherit optional integration from the shared metadata fallback", () => {
   git(f.root, ["init", "-b", "main"]);
@@ -105,7 +105,7 @@ test("a new worktree does not inherit optional integration from the shared metad
   expect(first.status).toBe(0);
   expect(first.data.initialization.integration).toEqual({ instructions: false, hooks: false });
   expect(existsSync(join(linked, "AGENTS.md"))).toBe(false); expect(existsSync(join(linked, ".claude"))).toBe(false);
-  expect(cli(linked, ["channel-config", "--apply"], env).data.error.code).toBe("E_CONFIG");
+  expect(cli(linked, ["channel-config", "--apply"], env).data.error.code).toBe("E_RETIRED");
   expect(cli(f.root, ["join"], env).data.initialization.initialized).toBe(false);
-  expect(cli(f.root, ["channel-config", "--apply"], env).status).toBe(0);
+  expect(cli(f.root, ["channel-config", "--apply"], env).data.error.code).toBe("E_RETIRED");
 });

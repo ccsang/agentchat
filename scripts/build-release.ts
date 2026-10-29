@@ -46,7 +46,6 @@ for (const input of Object.keys(inputs)) {
     directory = dirname(directory);
   }
 }
-if (!packages.size) throw new Error("Build metadata did not identify bundled dependency licenses");
 const notices = [`AgentChat ${version}: third-party notices\n\nBun ${Bun.version} runtime and its linked libraries\nSource: https://github.com/oven-sh/bun/tree/bun-v${Bun.version}\n\n${readFileSync(join(root, "third_party/bun-LICENSE.md"), "utf8")}`,
   ...[...packages.keys()].sort().map(name => `\n---\n\n${name}\n\n${packages.get(name)}`)];
 writeFileSync(join(outdir, `THIRD_PARTY_LICENSES-${target}.txt`), notices.join("\n"));

@@ -57,5 +57,8 @@ test("both marketplaces discover one shared thin skill and consistent portable/h
   const skill = readFileSync(join(directory, "skills/agentchat/SKILL.md"), "utf8");
   const frontmatter = Bun.YAML.parse(skill.split("---")[1]!) as { name: string; description: string };
   expect(frontmatter.name).toBe("agentchat"); expect(frontmatter.description.length).toBeGreaterThan(20);
-  expect(existsSync(join(directory, "hooks"))).toBe(false); expect(existsSync(join(directory, "mcp.json"))).toBe(false);
+  expect(Object.keys(JSON.parse(readFileSync(join(directory, "hooks/claude-hooks.json"), "utf8")).hooks)).toEqual(["SessionStart", "SessionEnd"]);
+  expect(read("plugins/agentchat/.claude-plugin/plugin.json").hooks).toBe("./hooks/claude-hooks.json");
+  expect(read("plugins/agentchat/.codex-plugin/plugin.json").hooks).toBeUndefined(); expect(portable.hooks).toBeUndefined();
+  expect(existsSync(join(directory, "hooks/hooks.json"))).toBe(false); expect(existsSync(join(directory, "mcp.json"))).toBe(false);
 });

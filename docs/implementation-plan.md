@@ -1,5 +1,19 @@
 # 实施顺序与验收
 
+
+## Alpha 5：自动加载插件 hooks，移除 Channel
+
+- [x] Claude 插件声明 SessionStart/SessionEnd，sh 包装脚本自动定位 CLI、转发原生 stdin；Codex 不加载此 hooks 文件。
+- [x] hooks 只提供宿主私有身份；仅已初始化工作区且 autoJoin 开启时自动登记和绑定，无关项目/子 agent 不初始化。
+- [x] join 自动绑定准确、版本受支持的 socket；显式 disable 保持，实例变化要求权威 SessionStart 或明确重绑。
+- [x] SessionEnd 立即停用准确会话的投递，消息不消失。
+- [x] 移除 Channel 运行器、握手、专用启动流程和 MCP SDK；旧命令 E_RETIRED，旧自有私有入口报废。
+- [x] setupVersion 4 迁移，保留消息、游标、预留与 unknown 暂停，默认不碰业务项目文件。
+- [x] 薄 skill 最低 CLI Alpha 5，内置规范与安装说明移除旧 Channel 流程。
+- [x] 隔离 peer、插件 hook 包装及独立程序验证；本轮不向真实模型会话发通知，不重复长期空闲测试。
+
+以下 Alpha 4 及更早章节为历史验收清单，Channel 入口由本节覆盖。发布的四平台与公开下载结果见 verification.md 和发布流水线。
+
 ## Alpha 4：插件薄 skill 与 CLI 规范
 
 - [x] 一份共享薄 skill，Claude/Codex marketplace 和便携/兼容插件描述。

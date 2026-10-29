@@ -1,5 +1,7 @@
 # AgentChat Lite v0.1 设计基线
 
+当前实现以最后的 Alpha 5 修订为准：Claude 插件自动加载生命周期 hooks，原生 socket 为唯一 Claude 接收路径，Channel 章节仅作历史设计。
+
 本设计归纳自“设计本地通信方案”对话。以“agent 自助接入”和“Claude 持续接收”的修订覆盖此前手动接入及限时 hook 接收步骤；重型 AgentBus 方案和要求用户维持 Codex 轮询桥的版本不作为实现基线。
 
 当前已有开发实现。本文是实现基线，具体自动化检查和原生客户端验证范围见 verification.md。
@@ -236,3 +238,21 @@ socket 端点按项目原生会话复用此前的明确选择，凭据不复制�
 优先选择通知 Tool argv 或当前项目自己的私有 run，其次全局 CLI；用哪一个执行工作，就读取哪一个的 skills get。切换或升级后重新加载。旧 CLI 无此能力时通过 ONBOARDING 准备新版程序，并在授权升级范围内用新版 install 预览/应用私有入口更新，再读取更新后的入口。全局程序升级不自动替换所有项目的固定版本，不能把新版规范套给旧入口。
 
 薄 skill 与完整规范分别更新：操作规范随 CLI 发布，薄 skill 只有触发和发现流程变化时才更新插件，不覆盖宿主插件缓存。便携 manifest 与两个宿主兼容 manifest 保持同一插件身份/版本；插件版本不要求与每次 CLI 版本同步。接收适配、两张表和原生验证边界不变。
+
+## 15. 插件生命周期 hooks 与移除 Channel（Alpha 5）
+
+用户明确要求 hooks 自动加载，并停止使用不可用的 Channel。本节覆盖此前的 Channel、MCP 握手、专用启动入口及 socket 单独选择流程；核心仍为一个 CLI、每房间 SQLite 和两张表，Codex queue 不变。
+
+Claude manifest 引用插件内的 hooks/claude-hooks.json，仅包含 SessionStart 和 SessionEnd。使用非默认文件名并只在 Claude manifest 声明，Codex manifest 不引用、插件也不提供默认 hooks/hooks.json，避免 Codex 意外执行 Claude hook。sh 包装脚本定位已安装 CLI 并原样转发 stdin，无下载、外部 Bun/Node、常驻监听或模型调用。CLI 安装器仍只安装程序，插件安装/更新由宿主管理。
+
+SessionStart 采用真实 hook cwd/session_id，向宿主私有 CLAUDE_ENV_FILE 写入准确身份；不在业务目录落身份文件。插件不初始化无关项目或未初始化 worktree，只有本工作区安装元数据有效且 autoJoin 开启时才登记成员并尝试绑定。autoJoin 默认关闭，保留显式停用。SessionEnd 清理准确主会话在各房间的 active 状态，阻止进程退出前继续投递；子 agent 不登记主身份。
+
+join 自动尝试准确原生 socket 绑定，不要求项目 hooks 或指令文件。保留 2.1.312 / peerProtocol 1、进程起始时间、唯一 UUID、项目、socket/key 权限、实例校验及原生入站/审批边界；版本不匹配仍可加入和主动读写，返回具体原因，无 Channel 降级。显式 socket disable 不被自动 join 覆盖。已有绑定变化时，只有新原生进程自己的 SessionStart 或明确 socket-config 才能重绑；新实例不继承旧 nonce 证明。
+
+移除 Channel 运行器、MCP SDK 依赖、启动标识/握手和专用恢复流程。旧 channel-config、launch、notify claude-channel/unavailable 统一返回 E_RETIRED，不创建项目状态。旧私有自有启动器通过安装迁移变成明确报废的入口，不执行 Claude；用户自有启动器保持原样。已加载的旧业务客户端不被关闭，旧项目配置需要时由用户在宿主重载或显式清理。
+
+私有安装元数据升至 setupVersion 4。全局 CLI/插件更新不批量更换项目固定入口；指定旧项目通过新版 install 预览/应用迁移。插件最低 CLI 版本为 Alpha 5；新独立程序的 hook 提示使用其真实执行文件，避免指向未更新的项目入口。默认 join/install 仍不读写业务 AGENTS.md、CLAUDE.md、hooks 配置或 Git exclude。
+
+旧消息、阅读游标、通知预留及 unknown 暂停保留。旧 Channel unknown 不因新默认适配而清除或换路重发；当前 socket 证明仍按准确实例/房间保存。保留旧 claude-socket-experimental 标识及历史证明，避免将配置迁移误报成新端到端验证。历史真实空闲验收范围不外推到新用户或新 hook 机制。
+
+项目级 install --hooks 仅保留手动兼容选项，插件用户不必使用；uninstall --hooks 只移除项目副本，宿主插件 hooks 由宿主管理。no-auto-join 停止未来登记，socket disable 停止当前绑定，uninstall 停用本工作区；均保留历史。
