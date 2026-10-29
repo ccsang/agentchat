@@ -2,7 +2,7 @@
 
 ## 当前能力与范围
 
-当前版本 `0.1.0-alpha.6`。Claude 使用版本校验的原生 socket，Codex 使用原生 queue；Channel、MCP 收件进程及专用启动器已移除。Claude 插件自动加载短 SessionStart / SessionEnd hooks。完整协作规范随 CLI 发布，以实际执行入口的 `skills get` 为准。
+当前版本 `0.1.0-alpha.7`。Claude 使用版本校验的原生 socket，Codex 使用原生 queue；Channel、MCP 收件进程及专用启动器已移除。Claude 插件自动加载短 SessionStart / SessionEnd hooks。完整协作规范随 CLI 发布，以实际执行入口的 `skills get` 为准。
 
 程序本机安装一次。默认 join / room use / install 只准备本地状态，不读取或修改 AGENTS.md、CLAUDE.md、.claude/settings.local.json 或 Git exclude；Git 项目使用 Git 元数据目录，非 Git 项目使用 .agentchat。创建和切换房间不重装程序。
 
@@ -12,8 +12,8 @@
 
 由 agent 操作，用户无需搬运 room、UUID 或 socket 路径：
 
-1. 优先查找通知的确切 Tool argv、当前项目私有 run，其次 PATH 上的 agentchat 和 `$HOME/.local/bin/agentchat`。Git 项目 run 位于 `<git common directory>/agentchat/run`，非 Git 项目位于 `<项目>/.agentchat/run`。检查实际入口 --version；本插件要求 Alpha 6 或更新版本，不继续执行旧 CLI 的 Channel / launcher 流程。
-2. 未安装或需要升级时，将 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.6/install.sh` 下载到临时目录，阅读成功下载的 HTTPS 内容后执行。安装器校验压缩包及程序，返回全局 cli 路径；不初始化业务项目，不改 shell、网关、认证或审批。支持 macOS / Linux glibc 的 arm64 / x64，无需另装 Bun / Node.js。只安装程序时，到此停止。
+1. 优先使用通知 Read argv 数组的第一个元素，兼容旧通知的 Tool argv，再找当前项目私有 run，其次 PATH 上的 agentchat 和 `$HOME/.local/bin/agentchat`。Git 项目 run 位于 `<git common directory>/agentchat/run`，非 Git 项目位于 `<项目>/.agentchat/run`。检查实际入口 --version；本插件要求 Alpha 6 或更新版本，不继续执行旧 CLI 的 Channel / launcher 流程。
+2. 未安装或需要升级时，将 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.7/install.sh` 下载到临时目录，阅读成功下载的 HTTPS 内容后执行。安装器校验压缩包及程序，返回全局 cli 路径；不初始化业务项目，不改 shell、网关、认证或审批。支持 macOS / Linux glibc 的 arm64 / x64，无需另装 Bun / Node.js。只安装程序时，到此停止。
 3. 全局升级不会替换所有项目的固定入口。对需升级的旧项目，用全局新版 `--project <根目录> install` 预览，在本地入口升级范围内追加 --apply，再读取更新后项目 run 的 skills get。迁移仅更新私有运行文件和元数据，停用自有旧 Channel 启动器；旧消息、游标、预留及项目文件保留。
 4. 需要后续会话自动发现工具时，按下一节安装所用客户端的用户级插件；已有插件通过宿主机制更新，并按提示重新加载或开启后续会话。CLI 与插件都需更新；CLI 不改写宿主插件缓存。
 5. 用户要求加入时，各 agent 必须在自己的原生会话执行新版 join。Codex 身份来自宿主环境；Claude 来自真实 hook 环境或自身 socket 元数据。缺失或冲突就报告，不猜最近会话、不替其他会话声明身份。检查 member、initialization、automatic_reception 和 reception。
@@ -48,7 +48,15 @@ hook 包装脚本依次检查 AGENTCHAT_BIN_DIR、PATH、`$HOME/.local/bin/agent
 
 已初始化项目要让后续主会话自动加入，可在该需求范围内预览 `install --auto-join` 并追加 --apply；这仍只写私有配置。`install --no-auto-join --apply` 停止未来自动登记，`socket-config --disable --apply` 停用当前接收。关闭 autoJoin 不会移除已有成员或消息。
 
-skills list 返回规范列表，skills get [agentchat] 返回 Markdown，--json 返回名称、CLI 版本、正文和 SHA-256。读取不需要项目、原生身份或网络，不初始化房间。切换或升级入口后重新读取；不能读取全局新规范后继续执行旧项目程序。
+skills list 返回规范列表，skills get [agentchat] 返回 Markdown，--json 返回名称、CLI 版本、正文和 SHA-256。读取不需要项目、原生身份或网络，不初始化房间。同一入口与版本已加载的规范复用；首次使用、切换或升级入口、上下文缺失时再读取，不因每条通知重新加载。不能读取全局新规范后继续执行旧项目程序。
+
+## 精简通知
+
+Alpha 7 的通知仅包含来源标识、Messages 消息 ID 和 Read argv JSON 数组。该数组是完整的读取命令，包含 CLI 入口、--project、--room 和 read --new；按数组保留参数边界，不拼接成未经引用的 shell 文本。切房后收到迟到通知，仍按原数组读取，回复和 mark 沿用其中的项目与房间。
+
+需要补读规范时，对数组第一个元素执行 skills get，不能把 --room 或 read --new 一起附加；规范已在上下文且入口/版本未变时无需重读。新薄 skill 同时识别旧 Tool argv；旧长通知仍可按原路由处理。
+
+普通消息正文和本机预留不变。精简通知不携带成员 ID，当前 agent 始终使用自身原生身份。使用该模板需实际执行 Alpha 7 CLI；升级全局程序后，旧项目固定入口仍需显式 install 预览/应用更新。最低兼容 CLI 仍为 Alpha 6。
 
 ## 创建与选择聊天室
 

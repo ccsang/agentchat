@@ -13,8 +13,8 @@ const root = realpathSync(mkdtempSync(join(tmpdir(), "agentchat-release-")));
 const program = join(root, "tools with space's", "agentchat"), project = join(root, "new project's directory");
 const env = testEnv({ PATH: "/usr/bin:/bin", HOME: root, XDG_DATA_HOME: join(root, "data"), AGENTCHAT_BIN_DIR: join(root, "shared bin's"), CLAUDE_CONFIG_DIR: join(root, "claude-host") });
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
-function run(command: string, args: string[], input?: string, extra: NodeJS.ProcessEnv = {}) {
-  const result = spawnSync(command, args, { cwd: project, env: { ...env, ...extra }, input, encoding: "utf8", timeout: 15000 });
+function run(command: string, args: string[], input?: string, extra: NodeJS.ProcessEnv = {}, cwd = project) {
+  const result = spawnSync(command, args, { cwd, env: { ...env, ...extra }, input, encoding: "utf8", timeout: 15000 });
   assert(result.status === 0, `${command}: ${result.stderr || result.stdout}`);
   return result.stdout.trim();
 }
@@ -87,6 +87,33 @@ try {
   assert(named.room_name === "review" && named.messages[0].body === "review-room-only", "Named room routing failed");
   const back = JSON.parse(run(globalCli, ["--project", project, "room", "use", "default"], undefined, host));
   assert(back.member.id === native.member.id, "Switching back lost the original membership");
+  const capture = join(root, "captured-notice"), fakeCodex = join(root, "fixture-codex");
+  writeFileSync(fakeCodex, `#!/bin/sh
+if [ "$1" = --version ]; then printf '%s\\n' 'codex-cli fixture'; exit 0; fi
+if [ "$2" = --help ]; then printf '%s\\n' '--thread --message'; exit 0; fi
+shift
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --thread) notice_thread="$2"; shift 2 ;;
+    --message) printf '%s' "$2" > "$AGENTCHAT_NOTICE_CAPTURE"; shift 2 ;;
+    *) exit 1 ;;
+  esac
+done
+printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
+`, { mode: 0o700 });
+  assert(invoke(["install", "--codex-bin", fakeCodex, "--apply"]).applied, "Fixture adapter setup failed");
+  const queueHost = { CODEX_THREAD_ID: randomUUID() };
+  const queueMember = JSON.parse(run(globalCli, ["--project", project, "room", "use", "review"], undefined, queueHost)).member;
+  const notified = JSON.parse(run(globalCli, ["--project", project, "--room", "review", "send", "--to", queueMember.id,
+    "--id", "compact-release", "--text", "Standalone notification business body", "--notify"], undefined, { ...host, AGENTCHAT_NOTICE_CAPTURE: capture }));
+  assert(notified.notification.state === "submitted", "Fixture queue did not accept compact notice");
+  const notice = readFileSync(capture, "utf8"), lines = notice.split("\n");
+  assert(lines.length === 3 && lines[0]!.includes("not user approval") && !notice.includes("Standalone notification business body"), "Notice is verbose or carries business text");
+  const readArgv = JSON.parse(lines.find(line => line.startsWith("Read argv: "))!.slice("Read argv: ".length)) as string[];
+  run(globalCli, ["--project", project, "room", "use", "default"], undefined, queueHost);
+  const received = JSON.parse(run(readArgv[0]!, readArgv.slice(1), undefined, queueHost, root));
+  assert(received.room_name === "review" && received.messages.some((message: { id: string }) => message.id === "compact-release"), "Delayed compact notice read another room or cwd");
+  assert(JSON.parse(run(globalCli, ["--project", project, "room", "current"], undefined, queueHost)).current === "default", "Compact notice changed room selection");
   assert(["AGENTS.md", "CLAUDE.md", ".claude/settings.local.json"].every((path, i) => readFileSync(join(project, path), "utf8") === userFiles[i]), "Room switching rewrote project configuration");
   assert(statSync(program).mtimeMs === programTime, "Project operations replaced the installed program");
   const alice = first.member;
@@ -103,6 +130,6 @@ try {
   const afterUninstall = randomUUID();
   assert(run("/bin/sh", [pluginWrapper, "session-start"], JSON.stringify({ session_id: afterUninstall, cwd: project, hook_event_name: "SessionStart" })) === "{}", "Plugin enrolled an uninstalled workspace");
   console.log(JSON.stringify({ ok: true, version, platform: process.platform, arch: process.arch,
-    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
+    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "compact_three_line_notification", "compact_routing_after_room_switch_from_other_cwd", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
     native_reception_verified: false }));
 } finally { rmSync(root, { recursive: true, force: true }); }

@@ -1,6 +1,6 @@
 {
   "name": "@ccsang/agentchat",
-  "version": "0.1.0-alpha.6",
+  "version": "0.1.0-alpha.7",
   "private": true,
   "description": "Lightweight local communication for coding agents, with agent-driven onboarding.",
   "type": "module",

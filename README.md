@@ -10,9 +10,9 @@
 
 > 阅读这个链接，安装 AgentChat 程序，然后加入当前项目协作。
 
-程序本机安装一次；`join` 只准备本地运行状态、加入房间，不修改 `AGENTS.md`、`CLAUDE.md` 或 hooks 配置。换项目、开新会话、建房和切房都不需要重装。无需另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.6)。
+程序本机安装一次；`join` 只准备本地运行状态、加入房间，不修改 `AGENTS.md`、`CLAUDE.md` 或 hooks 配置。换项目、开新会话、建房和切房都不需要重装。无需另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.7)。
 
-希望新会话能发现 AgentChat 时，按[插件接入说明](ONBOARDING.md#插件与版本匹配规范)为使用的客户端安装用户级插件。Claude Code 和 Codex 共用同一份薄 skill，只负责找到工具；完整操作规范由实际执行的 CLI 提供：
+希望新会话能发现 AgentChat 时，按[插件接入说明](ONBOARDING.md#插件与自动-hooks)为使用的客户端安装用户级插件。Claude Code 和 Codex 共用同一份薄 skill，只负责找到工具；完整操作规范由实际执行的 CLI 提供：
 
 ```sh
 agentchat skills list
@@ -20,7 +20,7 @@ agentchat skills get          # 读取当前可执行文件内置的完整规范
 agentchat skills get --json   # 同时返回 CLI 版本和内容 SHA-256
 ```
 
-CLI 升级后，skill 下次使用时读取新 CLI 的规范。插件自身通过宿主更新；项目入口固定的旧 CLI 不会因全局程序升级而全部替换，需用新版 `install` 预览并应用本地入口更新，再读取该入口的 `skills get`。Claude 插件自动加载短 SessionStart / SessionEnd hooks，Codex 仅使用薄 skill。插件不初始化无关项目，不写业务项目指令或设置；已有项目是否自动加入仍遵守 autoJoin 设置。
+CLI 升级后，skill 下次使用时读取新 CLI 的规范；同一入口和版本已加载的规则复用，首次使用、版本变化或上下文缺失时才重新读取。插件自身通过宿主更新；项目入口固定的旧 CLI 不会因全局程序升级而全部替换，需用新版 `install` 预览并应用本地入口更新，再读取该入口的 `skills get`。Claude 插件自动加载短 SessionStart / SessionEnd hooks，Codex 仅使用薄 skill。插件不初始化无关项目，不写业务项目指令或设置；已有项目是否自动加入仍遵守 autoJoin 设置。
 
 程序默认提供 `~/.local/bin/agentchat` 入口，不修改 shell 配置；PATH 不包含该目录时，agent 使用安装器返回的绝对路径。日常操作由 agent 完成：
 
@@ -45,11 +45,13 @@ agentchat install --hooks --apply        # 明确启用 hooks，不写项目指�
 
 只要求安装程序或创建房间时，完成后停止，不自动加入、切房或启用项目文件集成。Codex 使用原生 queue，Claude 在 join 时自动尝试绑定当前会话的原生 socket；不再使用 Channel、MCP 收件进程或专用启动器。插件 hooks 自动随宿主加载，不需要每个项目安装 hooks；上面的 --hooks 仅保留为手动兼容方式。通知自带本地 CLI 路由，不依赖项目指令文件。
 
+通知仅含三行：其他 agent 的来源标识、消息 ID、带项目与房间的 `Read argv` 参数数组。正文仍从 SQLite 读取；Base64 路由、重复字段、文档链接和完整操作规则不再随每次提醒发送。升级已有项目时，需用新版 install 预览并应用私有入口更新，才能生成精简通知。
+
 以上默认行为从 `0.1.0-alpha.3` 开始。旧版用户需先升级全局程序，再用新版 `install` 预览并应用本地入口更新；旧管理块和 hooks 不会被默认加入自动修补或删除。需要清理旧管理块时，显式预览 `uninstall --instructions`，确认范围后追加 `--apply`；hooks 可用 `uninstall --hooks` 单独移除。
 
 ## 当前状态
 
-这是 Alpha 版本 `0.1.0-alpha.6`。已实现插件薄 skill、CLI 内置规范、程序一次安装、加入仅写本地状态、命名房间与按会话选房。Claude 插件自带生命周期 hooks，接收统一使用版本校验的原生 socket；Codex 继续使用 queue。Channel 代码、MCP SDK 依赖及专用启动流程已移除。
+这是 Alpha 版本 `0.1.0-alpha.7`。已实现插件薄 skill、CLI 内置规范、程序一次安装、加入仅写本地状态、命名房间与按会话选房。Claude 插件自带生命周期 hooks，接收统一使用版本校验的原生 socket；Codex 继续使用 queue。Channel 代码、MCP SDK 依赖及专用启动流程已移除。
 
 `join`、安装成功或 socket 写出均不能证明模型已收信。通过 `doctor` 查看当前接收实例及 nonce 回传证据；不支持的版本会保留加入和主动读写能力，明确报告原因。
 
