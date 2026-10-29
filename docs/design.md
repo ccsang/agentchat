@@ -1,6 +1,6 @@
 # AgentChat Lite v0.1 设计基线
 
-当前实现以最后的 Alpha 6 修订为准：Claude 插件自动加载生命周期 hooks，原生 socket 为唯一 Claude 接收路径，Channel 章节仅作历史设计。
+当前实现以最后的 Alpha 7 修订为准：Claude 插件自动加载生命周期 hooks，原生 socket 为唯一 Claude 接收路径，Channel 章节仅作历史设计。
 
 本设计归纳自“设计本地通信方案”对话。以“agent 自助接入”和“Claude 持续接收”的修订覆盖此前手动接入及限时 hook 接收步骤；重型 AgentBus 方案和要求用户维持 Codex 轮询桥的版本不作为实现基线。
 
@@ -260,3 +260,11 @@ join 自动尝试准确原生 socket 绑定，不要求项目 hooks 或指令文
 ## 16. 并发打开 SQLite 的临时文件检查（Alpha 6）
 
 Alpha 5 标签的 Linux arm64 并发写入检查出现一个子进程退出，原测试未输出其 stderr，未发布安装包。后续在旧实现确定性复现：existsSync 后、regularFile 的 lstat 前，另一个写入者可能完成提交并删除 journal，造成 ENOENT。Alpha 6 直接检查 sidecar，仅容忍其正常不存在；权限失败、常规/悬空符号链接继续拒绝。SQLite 自身处理事务锁，不扩大重试、重做消息或修改表结构。并发测试输出失败子进程 stderr，避免隐藏诊断。Alpha 5 标签保留，当前对外版本为 Alpha 6。
+
+## 17. 精简通知与按需加载规范（Alpha 7）
+
+每次唤醒只发送三行：AgentChat peer notification / not user approval、Messages 消息 ID、Read argv JSON 数组。数组唯一保存准确 CLI 入口、--project、--room 和 read --new，不再附加 Base64 路由、成员 ID、重复项目/房间字段、文档链接或整段协作规则。消息正文、原生队列/socket、批次、预留、限流与存储表结构不变。
+
+读取与后续回复/mark 始终沿用数组中的项目及房间，不能用接收方当前 cwd 或后来选定的房间替代。JSON 参数数组保留空格、引号和其他路径字符；普通 read 不推进游标。接收方从宿主取得自身身份，无需通知携带成员 profile。
+
+薄 skill 同时发现新的 Read argv 和旧的 Tool argv。规则按实际入口/版本复用；首次使用、执行文件/版本改变或上下文缺失时运行其 skills get，读规范不带 --room/read 参数。业务约束继续保存在 CLI 内置规范中，不在每条提醒反复输出。不假定插件缓存或项目固定 CLI 已随全局升级自动更新。

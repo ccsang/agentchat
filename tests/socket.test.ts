@@ -120,7 +120,9 @@ test("named rooms reuse the explicitly chosen native socket but require their ow
     other.send({ from: sender.id, to: next.id, id: "review-only", body: "fixture", notify: true });
     expect((await dispatchSocket(other, target, next)).state).toBe("submitted");
     await until(() => frames.length === 2);
-    expect(JSON.stringify(frames[1])).toContain("--room review read --new");
+    const content = (frames[1]!.message as { content: string }).content;
+    const read = JSON.parse(content.split("\n").find(line => line.startsWith("Read argv: "))!.slice("Read argv: ".length));
+    expect(read).toEqual([join(f.project.room, "run"), "--project", f.root, "--room", "review", "read", "--new"]);
     expect(receiver(f.project, b).state).toBe("room_not_selected");
   } finally { other.close(); }
 });
