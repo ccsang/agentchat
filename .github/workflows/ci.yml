@@ -1,0 +1,85 @@
+name: Test and build release packages
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-15
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: linux-x64
+            runner: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run check
+      - run: bun test tests
+      - run: bun run build
+      - run: bun run build:release --target '${{ matrix.target }}'
+      - name: Verify the standalone package on its native system
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          version=$(bun -p 'require("./package.json").version')
+          bun run verify:release --binary "dist/release/agentchat-v$version-$TARGET"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            dist/release/*.gz
+            dist/release/SHA256SUMS-*
+            dist/release/THIRD_PARTY_LICENSES-*.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist/release
+      - name: Publish the verified Alpha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version=$(bun -p 'require("./package.json").version')
+          test "$RELEASE_TAG" = "v$version"
+          cat dist/release/SHA256SUMS-* | LC_ALL=C sort > dist/release/SHA256SUMS
+          cp dist/release/THIRD_PARTY_LICENSES-darwin-arm64.txt dist/release/THIRD_PARTY_LICENSES.txt
+          for licenses in dist/release/THIRD_PARTY_LICENSES-*.txt; do cmp "$licenses" dist/release/THIRD_PARTY_LICENSES.txt; done
+          gh release create "$RELEASE_TAG" dist/release/*.gz dist/release/SHA256SUMS \
+            dist/release/THIRD_PARTY_LICENSES.txt install.sh ONBOARDING.md LICENSE \
+            --verify-tag --prerelease --title "AgentChat $RELEASE_TAG" \
+            --notes-file "docs/releases/$RELEASE_TAG.md"

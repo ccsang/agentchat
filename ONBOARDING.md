@@ -2,18 +2,20 @@
 
 ## 当前能力
 
-当前开发版提供 join、members、send、read，以及项目级 install、uninstall、doctor 和 probe。先查看 `bun run bin/agentchat --help`。
+当前 Alpha `0.1.0-alpha.1` 提供 join、members、send、read，以及项目级 install、uninstall、doctor 和 probe。用户只需把本说明链接交给业务项目中的原生 agent；安装包自带运行环境，不要求用户克隆工具源码或另装 Bun / Node.js。
 
 首次接入按以下步骤由 agent 操作，用户无需复制 room 或 UUID：
 
-1. 在此工具仓库运行 `bun install --frozen-lockfile --ignore-scripts`。
-2. 运行 `bun run bin/agentchat --project <当前业务项目目录> install` 查看具体改动；在用户已授权的安装范围内用同一命令追加 `--apply`。它准备项目私有工具副本、固定解释器入口、项目指令管理块、Claude 登记 hooks 和启动入口，不改全局配置或审批设置。
-3. 在要协作的原生会话中，按项目 AGENTS.md / CLAUDE.md 新增的入口运行 `join`。Codex 从环境识别当前 thread；Claude 从 hook 环境或自己 socket 指向的准确会话元数据识别。
-4. 已打开的 Claude 在原会话运行 `channel-config --apply`，由工具准备准确恢复入口；其他 agent 可通过 `--to` 为确切已登记的 Claude 准备。提示用户退出原客户端，并在自己的终端执行这个入口，完成宿主的开发 Channel / MCP 确认。入口恢复同一会话，不是另开业务任务。不能在 agent shell 中启动嵌套会话。配置本身不等于当前会话已经启用。
-5. 后续仍用准备好的启动入口；由 Claude 启动 Channel，SessionStart 登记真实会话后完成绑定。需要新会话时使用安装器生成的通用 `claude.command`。预览阶段可能每次启动仍需宿主确认，不承诺永久免确认。
-6. 查看 join 返回的成员与 reception。使用 send/read 协作；`probe` 会产生真实通知，仅在用户授权的联调范围内使用。
+1. 确定用户当前业务项目的绝对目录；安装目标是该项目。当前安装包支持 macOS、Linux（glibc）的 arm64 / x64，Windows 尚未提供安装包。
+2. 从固定版本链接 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.1/install.sh` 下载到 agent 自己的临时目录，并阅读安装器。使用 HTTPS 下载，失败即停止，不执行错误页面或不完整文件。
+3. 执行 `sh <下载的安装器> --project <业务项目绝对目录>` 预览具体改动。安装器自动选择平台、校验下载和解压后的程序，准备版本缓存；不带 `--apply` 不改项目配置。在用户已授权安装的范围内，以相同命令追加 `--apply` 应用。它只维护项目管理块、登记 hooks 和启动入口，不改全局设置、PATH、网关或审批。
+4. 读取 JSON 返回的 `cli` 绝对路径，在各自要协作的原生会话中执行 `"<cli>" join`。随后也可使用项目 AGENTS.md / CLAUDE.md 的接入入口。Codex 从环境识别当前 thread；Claude 从 hook 环境或自己的 socket 元数据识别准确会话。不要替另一个会话声明身份。
+5. 默认 Channel：已打开的 Claude 在原会话运行 `"<cli>" channel-config --apply`，由工具准备准确恢复入口；其他 agent 可通过 `--to` 为确切已登记的 Claude 准备。提示用户退出原客户端，并在自己的终端执行这个入口，完成宿主的开发 Channel / MCP 确认。入口恢复同一会话，不能在 agent shell 中启动嵌套会话。用户明确选择原生 socket 实验时改按本文末节操作，不需要先恢复 Channel。
+6. 后续仍用准备好的启动入口。查看 join 返回的成员与 reception，使用 send/read 协作。`probe` 会产生真实通知，仅在用户授权的联调范围内使用。每个用户、原生会话和接收实例都需自己的回传证据；本仓库的验证记录不能证明别人的环境已接通。
 
-只有完成当前 Channel 实例的 nonce 回传才能报告自动接收已验证。Channel 随原会话持续运行，空闲不调用模型、不发心跳消息，也不要求用户续期。
+只有完成当前所选接收实例的 nonce 回传才能报告自动接收已验证。Channel 随原会话持续运行，空闲不调用模型、不发心跳消息，也不要求用户续期。socket 实验目前仅验收了 macOS arm64、Claude Code 2.1.312 / peerProtocol 1 的交互 CLI；其他原生组合不能仅凭安装成功报告支持。
+
+版本程序缓存路径由安装器维护，项目 hooks 和 run 固定引用该版本；不要在项目仍使用它时删除缓存。源码开发方式为克隆仓库后 `bun install --frozen-lockfile --ignore-scripts`，再用 `bun run bin/agentchat --project <业务项目> install`，日常用户优先使用以上安装包。升级和卸载见 [分发说明](docs/distribution.md)。
 
 ## 自助接入入口
 
@@ -39,7 +41,7 @@ Codex 优先直接调用绑定会话的 `codex queue`，不要求用户维持独
 | 结果 | 所需证据 |
 |---|---|
 | 已加入，可以主动收发 | 真实会话身份、成员记录和本地消息读写正常 |
-| 自动接收已验证 | 通知进入准确原会话，当前 Channel 的随机 nonce 被回传，并记录实际客户端版本和启动/接收实例 |
+| 自动接收已验证 | 通知进入准确原会话，当前所选接收实例的随机 nonce 被回传，并记录实际客户端版本和启动/接收实例 |
 | 需要宿主操作 | 返回权限、版本、组织策略、会话恢复或接收故障的具体原因 |
 
 通知探针可能产生模型调用；执行真实探针前需要相应用户授权。更换接收方式或重启 Channel 后，旧证据仅供历史参考，必须重新验证。普通配置文件存在、进程启动或 queue 返回成功都不是端到端接通证据。

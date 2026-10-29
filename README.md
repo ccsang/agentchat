@@ -4,9 +4,17 @@
 
 核心保持为 **一个 CLI、一份 SQLite、两张表**。接入由 agent 自动识别项目和当前会话，用户通过自然语言表达协作意图。
 
+## 安装
+
+把 [安装与接入说明](https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md) 发给当前项目中的 Claude Code 或 Codex，并告诉它：
+
+> 阅读这个链接，为当前项目安装 AgentChat，并加入协作。
+
+agent 会下载固定版本安装包，预览并应用项目配置，再从当前原生会话加入。无需克隆源码、另装 Bun / Node.js 或修改 PATH。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.1)。原生接收可能需要客户端交互启用，agent 会说明具体操作。
+
 ## 当前状态
 
-这是开发版本 `0.1.0-dev.2`。已实现消息存储、四个日常命令、自助项目/会话发现、项目安装器、Claude Channel、显式选择的原生 socket 实验接收和 Codex queue 通知。
+这是 Alpha 版本 `0.1.0-alpha.1`。已实现消息存储、四个日常命令、自助项目/会话发现、项目安装器、Claude Channel、显式选择的原生 socket 实验接收和 Codex queue 通知。
 
 原生组合需要分别验收：`join`、配置文件存在或通知接口返回成功均不代表自动接收已验证。通过 `doctor` 查看接收能力及 nonce 回传证据。
 
@@ -55,6 +63,7 @@ bun run build
 - [给 agent 的接入说明](ONBOARDING.md)：区分目标体验和当前可用能力。
 - [开发约定](AGENTS.md)。
 - [验证记录](docs/verification.md)：自动化测试与原生回传证据分开记录。
+- [安装包与版本发布](docs/distribution.md)：固定版本、自带运行环境、校验和升级方式。
 
 ## 运行方式
 
@@ -66,7 +75,7 @@ Git 项目的消息库保存在 Git common directory 下的 `agentchat/chat.db`�
 
 Claude 默认由会话内的单向 Channel 持续接收：空闲只查询本地 SQLite，有定向通知才唤醒模型，无 300 秒收件窗口或用户续期。SessionStart / SessionEnd hooks 只登记和清理；升级会移除本工具的旧 Stop 监听，并保留其他 hooks。
 
-安装器提供私有 `run` 入口，固定使用安装时的 Bun，不要求 Bun 在调用方 PATH 中。`channel-config --apply` 由原 Claude agent 准备准确恢复入口；Codex 也可对已登记的确切 Claude 成员使用 `--to` 准备入口。用户退出原客户端后执行它，由宿主恢复同一会话并完成开发 Channel / MCP 的交互确认。以后仍从准备好的入口启动；预览阶段不能承诺宿主只确认一次。默认 `claude.command` 用于用户主动开始新的协作会话。工具不会后台另开业务会话。
+安装器提供私有 `run` 入口。安装包固定使用版本缓存中的独立程序；源码安装固定使用安装时的 Bun，均不依赖调用方 PATH。`channel-config --apply` 由原 Claude agent 准备准确恢复入口；Codex 也可对已登记的确切 Claude 成员使用 `--to` 准备入口。用户退出原客户端后执行它，由宿主恢复同一会话并完成开发 Channel / MCP 的交互确认。以后仍从准备好的入口启动；预览阶段不能承诺宿主只确认一次。默认 `claude.command` 用于用户主动开始新的协作会话。工具不会后台另开业务会话。
 
 启动入口每次生成独立标识，通过真实 SessionStart 的 `session_id` 与 Channel 握手。MCP 子进程无需继承 hook 注入的原生 UUID；旧启动上下文不能复用。Channel 的本地存活检查每隔约 15 秒更新，空闲不调用模型；这个内部租约不会使会话在长时间空闲后过期。
 

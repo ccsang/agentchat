@@ -1,9 +1,11 @@
 {
   "name": "@ccsang/agentchat",
-  "version": "0.1.0-dev.2",
+  "version": "0.1.0-alpha.1",
   "private": true,
   "description": "Lightweight local communication for coding agents, with agent-driven onboarding.",
   "type": "module",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/ccsang/agentchat.git" },
   "packageManager": "bun@1.3.14",
   "bin": {
     "agentchat": "./bin/agentchat"
@@ -12,6 +14,8 @@
     "dev": "bun run src/cli.ts",
     "check": "tsc --noEmit",
     "build": "bun build src/cli.ts --target=bun --outdir=dist",
+    "build:release": "bun run scripts/build-release.ts",
+    "verify:release": "bun run scripts/verify-release.ts",
     "test": "bun test tests",
     "test:native": "bun run scripts/start-native-test.ts",
     "verify:native": "bun run scripts/verify-native.ts",
