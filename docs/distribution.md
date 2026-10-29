@@ -18,9 +18,9 @@
 - 命名房间数据位于项目集成目录的 rooms/<名称>，default 保留原 chat.db。每房间仍只有两张表；本地运行状态与房间数据分离。
 - 本地初始化与显式集成复用计划、备份、幂等和冲突检查。uninstall --instructions / --hooks 可分别移除；uninstall --apply 停用当前工作区并清理已启用的自有集成，保留所有房间、消息和全局程序，不删除仍可能被其他项目引用的缓存。
 
-不要删除仍被项目引用的版本缓存。移动项目后，用已安装程序的 install 预览并应用以修复私有入口；已启用的 hooks 需要单独显式更新，无需重新下载程序。Alpha 5 不再使用 Channel。升级会停用自有私有 Channel 入口；已加载的旧宿主配置可能需重载，不关闭业务会话，不重放旧通知。
+不要删除仍被项目引用的版本缓存。移动项目后，用已安装程序的 install 预览并应用以修复私有入口；已启用的 hooks 需要单独显式更新，无需重新下载程序。Alpha 6 不再使用 Channel。升级会停用自有私有 Channel 入口；已加载的旧宿主配置可能需重载，不关闭业务会话，不重放旧通知。
 
-默认不改项目文件从 Alpha 3 开始，内置规范从 Alpha 4 开始。升级时先运行新版安装器；已初始化的项目入口用全局新版 install 预览并 --apply 更新本地运行文件，再读取该入口的 skills get。重复 join 不替换已固定的旧程序。升级不自动修补或删除旧管理块、hooks；明确需要时分别预览 install/uninstall --instructions 或 --hooks，再应用所选范围。通知自带本地 CLI 路由，普通通信不需要这两类项目文件。Claude 插件 hooks 通过宿主管理，不需要 --hooks 项目副本；开启 --auto-join 后仅在已初始化工作区自动加入。全局程序与插件都需更新到 Alpha 5，插件最低版本检查会拒绝继续旧 Channel 流程。
+默认不改项目文件从 Alpha 3 开始，内置规范从 Alpha 4 开始。升级时先运行新版安装器；已初始化的项目入口用全局新版 install 预览并 --apply 更新本地运行文件，再读取该入口的 skills get。重复 join 不替换已固定的旧程序。升级不自动修补或删除旧管理块、hooks；明确需要时分别预览 install/uninstall --instructions 或 --hooks，再应用所选范围。通知自带本地 CLI 路由，普通通信不需要这两类项目文件。Claude 插件 hooks 通过宿主管理，不需要 --hooks 项目副本；开启 --auto-join 后仅在已初始化工作区自动加入。全局程序与插件都需更新到 Alpha 6，插件最低版本检查会拒绝继续旧 Channel 流程。
 
 ## 验证与构建
 
@@ -30,7 +30,7 @@ bun run check
 bun test tests
 bun run build
 bun run build:release
-bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.5-darwin-arm64
+bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.6-darwin-arm64
 ```
 
 `build:release --target linux-x64` 等入口可交叉编译；release workflow 在四种原生 runner 上分别运行测试、构建和独立程序验收。验收使用全新目录、带空格/引号的路径及不含开发工具的 PATH，检查程序安装与同名命令保护、默认加入不改项目文件、显式可选集成、后续加入、房间切换、hooks、SQLite 收发/mark 和卸载，不向真实会话发通知。
