@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { connectPeer, SOCKET_ADAPTER, validatePeer } from "./claude-peer.ts";
-import { socketBinding } from "./socket-state.ts";
-import { pause, paused, policy, uninstalled } from "./runtime.ts";
+import { socketBinding, socketDisabled } from "./socket-state.ts";
+import { pause, paused, policy, state, uninstalled } from "./runtime.ts";
 import { tryLock } from "./lock.ts";
 import { privateDirectory } from "./files.ts";
 import { notice } from "./notify.ts";
@@ -11,6 +11,8 @@ import type { Store } from "./store.ts";
 import { memberRoomSelected } from "./rooms.ts";
 
 export async function dispatchSocket(store: Store, project: Project, member: Member): Promise<Record<string, unknown>> {
+  if (state(project, member)?.active === false) return { state: "unavailable", reason: "native_session_ended" };
+  if (socketDisabled(project, member)) return { state: "unavailable", reason: "Native socket reception was explicitly disabled" };
   if (!memberRoomSelected(project, member)) return { state: "held", reason: "room_not_selected", automatic_retry: false };
   privateDirectory(join(project.room, "notifications"));
   const release = tryLock(join(project.room, "notifications", `${member.id}.lock`));
@@ -21,7 +23,7 @@ export async function dispatchSocket(store: Store, project: Project, member: Mem
     const stopped = paused(project, member, SOCKET_ADAPTER);
     if (stopped) return { state: "paused", reason: stopped.reason };
     const binding = socketBinding(project, member);
-    if (!binding?.enabled) return { state: "unavailable", reason: "Native socket experiment has not been explicitly enabled" };
+    if (!binding?.enabled) return { state: "unavailable", reason: "No supported native socket is bound; run join and doctor" };
     try { validatePeer(project, member, binding); connection = await connectPeer(binding); validatePeer(project, member, binding); }
     catch { return { state: "unavailable", reason: "Exact native peer failed validation or connection; no notification reservation was consumed" }; }
     const config = policy(project), claim = store.claim(member.id, config.budget, Date.now(), config.windowSeconds * 1000);

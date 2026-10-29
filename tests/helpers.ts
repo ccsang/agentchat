@@ -4,13 +4,6 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { Project } from "../src/types.ts";
-import { createLaunch } from "../src/binding.ts";
-
-// Synthetic host relationship for in-process protocol tests; never native proof.
-export function fixtureLaunch(project: Project, session: string | null, version: string, hostPid = process.ppid) {
-  const launch = createLaunch(project, session, version); launch.attachHost(hostPid); return launch;
-}
-
 export function fixture() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "agentchat-test-")));
   const project: Project = { root, room: join(root, ".agentchat"), gitCommonDir: null };
@@ -22,7 +15,7 @@ export function testEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return { ...env, ...extra };
 }
 export function cli(root: string, args: string[], env = testEnv(), input?: string) {
-  const result = spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), "--project", root, ...args], { env, input, encoding: "utf8", timeout: 15000 });
+  const result = spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), "--project", root, ...args], { env: { ...env, CLAUDE_CONFIG_DIR: env.CLAUDE_CONFIG_DIR ?? join(root, "isolated-claude") }, input, encoding: "utf8", timeout: 15000 });
   const text = result.stdout.trim() || result.stderr.trim();
   return { ...result, data: text ? JSON.parse(text) : null };
 }

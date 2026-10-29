@@ -15,6 +15,19 @@ test("preview writes nothing and exposes exact owned hooks", async () => {
   expect(existsSync(f.project.room)).toBe(false); expect(existsSync(join(f.root, ".claude"))).toBe(false);
   expect(plan.hooks.Stop).toBeUndefined(); expect(plan.hooks.SessionStart).toBeDefined();
 });
+test("explicit hook upgrade retires only managed Stop listeners and preserves budget and user hooks", async () => {
+  mkdirSync(join(f.root, ".claude")); mkdirSync(f.project.room, { mode: 0o700 });
+  writeFileSync(join(f.project.room, "config.json"), JSON.stringify({ budget: 7, watchSeconds: 300, autoJoin: false }), { mode: 0o600 });
+  writeFileSync(join(f.root, ".claude/settings.local.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [
+    { type: "command", command: "old", args: ["--agentchat-managed=v1", "hook", "wait"], asyncRewake: true },
+    { type: "command", command: "user-custom-hook" },
+  ] }] } }));
+  applyInstall(await planInstall(f.project, { hooks: true }));
+  const settings = JSON.parse(readFileSync(join(f.root, ".claude/settings.local.json"), "utf8"));
+  expect(settings.hooks.Stop[0].hooks).toEqual([{ type: "command", command: "user-custom-hook" }]);
+  const config = JSON.parse(readFileSync(join(f.project.room, "config.json"), "utf8"));
+  expect(config.budget).toBe(7); expect(config.windowSeconds).toBe(600); expect(config.watchSeconds).toBeUndefined();
+});
 test("install is idempotent, preserves user hooks and never sets approval or inbound policy", async () => {
   mkdirSync(join(f.root, ".claude"));
   writeFileSync(join(f.root, ".claude/settings.local.json"), JSON.stringify({ permissions: { deny: ["Bash(curl:*)"] }, hooks: { Stop: [{ hooks: [{ type: "command", command: "echo user" }] }] } }));
@@ -59,15 +72,14 @@ test("explicit auto-join opt-out is preserved in installed policy", () => {
   expect(cli(f.root, ["install", "--apply", "--no-auto-join"]).status).toBe(0);
   expect(JSON.parse(readFileSync(join(f.project.room, "config.json"), "utf8")).autoJoin).toBe(false);
 });
-test("Channels config is generated from the current native identity and never spoofs it via env", () => {
-  const identity = nativeIdentity("claude"), env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: identity.session });
-  expect(cli(f.root, ["install", "--hooks", "--apply"], env).status).toBe(0);
-  expect(cli(f.root, ["join"], env).status).toBe(0);
-  const plan = cli(f.root, ["channel-config"], env); expect(plan.status).toBe(0); expect(existsSync(plan.data.path)).toBe(false);
-  expect(plan.data.script).not.toContain("AGENTCHAT_CLAUDE_SESSION_ID"); expect(plan.data.script).toContain("launch"); expect(plan.data.resumes_exact_session).toBe(true);
-  const applied = cli(f.root, ["channel-config", "--apply"], env); expect(applied.status).toBe(0); expect(existsSync(applied.data.path)).toBe(true);
-  expect(applied.data.reception_verified).toBe(false);
+test("Channel configuration and launch commands retire without preparing a client", () => {
+  const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: nativeIdentity("claude").session });
+  for (const args of [["channel-config", "--apply"], ["launch", "claude"], ["notify", "claude-channel"]]) {
+    expect(cli(f.root, args, env).data.error.code).toBe("E_RETIRED");
+  }
+  expect(existsSync(f.project.room)).toBe(false);
 });
+
 test("partial installation failure rolls back only the files it wrote", async () => {
   writeFileSync(join(f.root, "AGENTS.md"), "original\n"); const plan = await planInstall(f.project, { instructions: true, hooks: true });
   const badParent = join(f.root, "not-a-directory"); writeFileSync(badParent, "user data");

@@ -11,7 +11,7 @@ const { values } = parseArgs({ options: { binary: { type: "string" } } });
 if (!values.binary) throw new Error("Pass --binary with a native release executable");
 const root = realpathSync(mkdtempSync(join(tmpdir(), "agentchat-release-")));
 const program = join(root, "tools with space's", "agentchat"), project = join(root, "new project's directory");
-const env = testEnv({ PATH: "/usr/bin:/bin", HOME: root, XDG_DATA_HOME: join(root, "data"), AGENTCHAT_BIN_DIR: join(root, "shared bin's") });
+const env = testEnv({ PATH: "/usr/bin:/bin", HOME: root, XDG_DATA_HOME: join(root, "data"), AGENTCHAT_BIN_DIR: join(root, "shared bin's"), CLAUDE_CONFIG_DIR: join(root, "claude-host") });
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 function run(command: string, args: string[], input?: string, extra: NodeJS.ProcessEnv = {}) {
   const result = spawnSync(command, args, { cwd: project, env: { ...env, ...extra }, input, encoding: "utf8", timeout: 15000 });
@@ -38,11 +38,24 @@ try {
   const conflict = spawnSync(program, ["setup"], { cwd: project, env, encoding: "utf8" });
   assert(conflict.status !== 0 && readFileSync(globalCli, "utf8") === "Unrelated user command\n", "Program setup overwrote an unrelated command");
   writeFileSync(globalCli, wrapper);
+  const pluginWrapper = resolve(import.meta.dir, "../plugins/agentchat/scripts/hook.sh"), nativeEnv = join(root, "native-env");
+  const startupSession = randomUUID(), startup = JSON.stringify({ session_id: startupSession, cwd: project, hook_event_name: "SessionStart" });
+  writeFileSync(nativeEnv, "export USER_RULE='keep'\n", { mode: 0o600 });
+  assert(run("/bin/sh", [pluginWrapper, "session-start"], startup, { CLAUDE_ENV_FILE: nativeEnv }) === "{}", "Plugin hook initialized an unrelated project");
+  assert(!existsSync(join(project, ".agentchat")) && readFileSync(nativeEnv, "utf8").includes(startupSession), "Plugin identity is missing or startup wrote project state");
   const preview = invoke(["install"]);
   assert(preview.applied === false && !existsSync(join(project, ".agentchat")), "Preview mutated the project");
   const first = JSON.parse(run(globalCli, ["--project", project, "join", "--generic", "--name", "release-alice"]));
   assert(first.initialization.initialized, "First join did not initialize its project");
   assert(first.initialization.runtime_only && first.initialization.project_file_changes.length === 0, "First join requested project integration");
+  run("/bin/sh", [pluginWrapper, "session-start"], startup);
+  assert(!invoke(["members"]).members.some((member: { session_ref: string }) => member.session_ref === startupSession), "Plugin ignored auto-join opt-out");
+  assert(invoke(["install", "--auto-join", "--apply"]).applied, "Auto-join configuration failed");
+  const startupResult = JSON.parse(run("/bin/sh", [pluginWrapper, "session-start"], startup));
+  assert(startupResult.hookSpecificOutput.additionalContext.includes(program), "Plugin context used an old pinned executable");
+  assert(invoke(["members"]).members.some((member: { session_ref: string }) => member.session_ref === startupSession), "Compiled plugin startup did not enroll the fixture session");
+  run("/bin/sh", [pluginWrapper, "session-end"], JSON.stringify({ session_id: startupSession, cwd: project, hook_event_name: "SessionEnd" }));
+  assert(JSON.parse(readFileSync(join(project, ".agentchat", "sessions", `${startupSession}.json`), "utf8")).active === false, "Compiled plugin SessionEnd did not clean up");
   assert(readFileSync(join(project, "AGENTS.md"), "utf8") === "Existing project instructions\n" && !existsSync(join(project, "CLAUDE.md")) && !existsSync(join(project, ".claude")), "Default join changed project instruction or hook files");
   const optional = invoke(["install", "--instructions", "--hooks"]);
   assert(optional.project_file_changes.length === 3 && !optional.applied && !existsSync(join(project, ".claude")), "Optional integration preview wrote project files");
@@ -65,8 +78,7 @@ try {
   const members = invoke(["members"]).members;
   const claude = members.find((member: { session_ref: string }) => member.session_ref === session);
   assert(claude, "Compiled hook did not register its synthetic fixture session");
-  const launcher = invoke(["channel-config", "--to", claude.id]);
-  assert(launcher.script.includes("tools with space") && !launcher.script.includes("agentchat.js"), "Launcher depends on source/Bun");
+  assert(!existsSync(join(room, "claude.command")), "New installs still generate a Channel launcher");
   assert(invoke(["room", "create", "review"]).created, "Room creation failed");
   const selected = JSON.parse(run(globalCli, ["--project", project, "room", "use", "review"], undefined, host));
   assert(selected.room === "review" && selected.initialization.initialized === false, "Room selection reinstalled its project");
@@ -88,7 +100,9 @@ try {
   assert(invoke(["uninstall", "--apply"]).applied, "Uninstall failed");
   assert(readFileSync(join(project, "AGENTS.md"), "utf8") === "Existing project instructions\n", "Uninstall removed user instructions");
   assert(existsSync(join(room, "chat.db")), "Uninstall deleted history");
+  const afterUninstall = randomUUID();
+  assert(run("/bin/sh", [pluginWrapper, "session-start"], JSON.stringify({ session_id: afterUninstall, cwd: project, hook_event_name: "SessionStart" })) === "{}", "Plugin enrolled an uninstalled workspace");
   console.log(JSON.stringify({ ok: true, version, platform: process.platform, arch: process.arch,
-    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "idempotency", "hooks", "launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
+    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
     native_reception_verified: false }));
 } finally { rmSync(root, { recursive: true, force: true }); }

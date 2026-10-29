@@ -7,7 +7,6 @@ import { pause, paused, policy, receiver } from "./runtime.ts";
 export { pause, paused, resume } from "./runtime.ts";
 import { privateDirectory } from "./files.ts";
 import { tryLock } from "./lock.ts";
-import { socketBinding } from "./socket-state.ts";
 import { memberRoomSelected, roomName } from "./rooms.ts";
 import { integrationDir } from "./project.ts";
 
@@ -60,12 +59,12 @@ export function dispatchCodex(store: Store, project: Project, member: Member): R
 export async function notifyMember(store: Store, project: Project, member: Member): Promise<Record<string, unknown>> {
   if (!memberRoomSelected(project, member)) return { state: "held", reason: "room_not_selected", automatic_retry: false };
   if (member.runtime === "codex") return dispatchCodex(store, project, member);
-  if (member.runtime === "claude" && socketBinding(project, member)?.enabled) {
+  if (member.runtime === "claude") {
     const { dispatchSocket } = await import("./socket-adapter.ts"); return dispatchSocket(store, project, member);
   }
   const stopped = paused(project, member);
   if (stopped) return { state: stopped.kind === "host_blocked" ? "blocked" : "paused", reason: stopped.reason };
   const reception = receiver(project, member);
-  return { state: member.runtime !== "claude" ? "manual" : reception.state === "rate_limited" ? "held" : reception.state === "inactive" ? "unavailable" : "pending_receiver", reception, processed: false };
+  return { state: "manual", reception, processed: false };
 }
 export function notificationDirectory(project: Project): void { privateDirectory(join(project.room, "notifications")); }

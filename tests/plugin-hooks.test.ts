@@ -1,0 +1,72 @@
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { applyInstall, planInstall } from "../src/install.ts";
+import { pluginHook } from "../src/hooks.ts";
+import { Store } from "../src/store.ts";
+import { receiver, state } from "../src/runtime.ts";
+import { fixture, testEnv } from "./helpers.ts";
+
+let f: ReturnType<typeof fixture>, host: ReturnType<typeof fixture>;
+beforeEach(() => { f = fixture(); host = fixture(); }); afterEach(() => { f.cleanup(); host.cleanup(); });
+function input(event = "SessionStart", session = randomUUID()) { return { hook_event_name: event, session_id: session, cwd: f.root }; }
+const envFor = () => testEnv({ CLAUDE_CONFIG_DIR: join(host.root, "claude") });
+test("plugin startup persists real hook identity without initializing an unjoined project", () => {
+  const path = join(host.root, "env"); writeFileSync(path, "export USER_RULE='keep'\n", { mode: 0o600 });
+  const context = input(), env = { ...envFor(), CLAUDE_ENV_FILE: path };
+  expect(pluginHook(context, "SessionStart", env)).toEqual({}); pluginHook(context, "SessionStart", env);
+  expect(readFileSync(path, "utf8")).toBe(`export USER_RULE='keep'\nexport AGENTCHAT_CLAUDE_SESSION_ID='${context.session_id}'\n`);
+  expect(readdirSync(f.root)).toEqual([]);
+});
+test("plugin lifecycle auto-enrolls only initialized projects without requiring project hooks", async () => {
+  applyInstall(await planInstall(f.project, { autoJoin: true }));
+  const context = input(); pluginHook(context, "SessionStart", envFor());
+  const store = new Store(f.project.room);
+  try {
+    const member = store.actor({ runtime: "claude", session: context.session_id });
+    expect(state(f.project, member)?.active).toBe(true); expect(receiver(f.project, member).mode).toBe("claude-socket-experimental");
+    pluginHook({ ...context, hook_event_name: "SessionEnd" }, "SessionEnd", envFor());
+    expect(state(f.project, member)?.active).toBe(false);
+  } finally { store.close(); }
+  expect(existsSync(join(f.root, ".claude"))).toBe(false); expect(existsSync(join(f.root, "AGENTS.md"))).toBe(false);
+});
+test("auto-join opt-out and uninstall stop plugin enrollment", async () => {
+  applyInstall(await planInstall(f.project, { autoJoin: false })); pluginHook(input(), "SessionStart", envFor());
+  expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
+  applyInstall(await planInstall(f.project, { uninstall: true }));
+  expect(pluginHook(input(), "SessionStart", envFor())).toEqual({}); expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
+});
+test("subagent startup never leaks identity to the primary shell or creates project state", () => {
+  const path = join(host.root, "env"); writeFileSync(path, "", { mode: 0o600 });
+  expect(pluginHook({ ...input(), agent_id: "child" }, "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: path })).toEqual({});
+  expect(readFileSync(path, "utf8")).toBe(""); expect(readdirSync(f.root)).toEqual([]);
+});
+test("plugin wrapper forwards stdin with spaces and apostrophes and needs no external runtime", () => {
+  const directory = join(host.root, "bin with space's"); mkdirSync(directory);
+  const capture = join(host.root, "capture");
+  writeFileSync(join(directory, "agentchat"), '#!/bin/sh\nprintf "%s\\n" "$*" > "$CAPTURE"\ncat >> "$CAPTURE"\n', { mode: 0o700 });
+  const payload = JSON.stringify(input());
+  const r = spawnSync("/bin/sh", [join(import.meta.dir, "../plugins/agentchat/scripts/hook.sh"), "session-start"],
+    { input: payload, encoding: "utf8", env: { ...envFor(), PATH: "/usr/bin:/bin", HOME: host.root, AGENTCHAT_BIN_DIR: directory, CAPTURE: capture } });
+  expect(r.status).toBe(0); expect(readFileSync(capture, "utf8")).toBe(`hook plugin-session-start\n${payload}`);
+});
+test("missing CLI is silent and plugin context follows native cwd rather than startup root", () => {
+  const context = input();
+  const r = spawnSync("/bin/sh", [join(import.meta.dir, "../plugins/agentchat/scripts/hook.sh"), "session-start"],
+    { input: JSON.stringify(context), encoding: "utf8", env: { PATH: "/usr/bin:/bin", HOME: host.root } });
+  expect(r.status).toBe(0); expect(r.stdout).toBe(""); expect(readdirSync(f.root)).toEqual([]);
+  const cli = spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), "hook", "plugin-session-start"],
+    { cwd: host.root, env: envFor(), input: JSON.stringify(context), encoding: "utf8" });
+  expect(cli.status).toBe(0); expect(JSON.parse(cli.stdout)).toEqual({}); expect(readdirSync(f.root)).toEqual([]);
+});
+test("upgrading retires owned private Channel launchers without touching user launchers", async () => {
+  mkdirSync(f.project.room, { mode: 0o700 });
+  const old = join(f.project.room, "claude.command"); writeFileSync(old, '#!/bin/sh\n# AgentChat managed Claude entry. Host confirmations remain interactive.\nexit 0\n', { mode: 0o700 });
+  mkdirSync(join(f.project.room, "launchers"), { mode: 0o700 });
+  const own = join(f.project.room, "launchers/old.command"), user = join(f.project.room, "launchers/user.command");
+  writeFileSync(own, readFileSync(old), { mode: 0o700 }); writeFileSync(user, "User launcher\n", { mode: 0o700 });
+  applyInstall(await planInstall(f.project)); expect(spawnSync("/bin/sh", [old]).status).toBe(1);
+  expect(readFileSync(own, "utf8")).toContain("retired"); expect(readFileSync(user, "utf8")).toBe("User launcher\n");
+});

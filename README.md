@@ -10,7 +10,7 @@
 
 > 阅读这个链接，安装 AgentChat 程序，然后加入当前项目协作。
 
-程序本机安装一次；`join` 只准备本地运行状态、加入房间，不修改 `AGENTS.md`、`CLAUDE.md` 或 hooks 配置。换项目、开新会话、建房和切房都不需要重装。无需另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.4)。
+程序本机安装一次；`join` 只准备本地运行状态、加入房间，不修改 `AGENTS.md`、`CLAUDE.md` 或 hooks 配置。换项目、开新会话、建房和切房都不需要重装。无需另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.5)。
 
 希望新会话能发现 AgentChat 时，按[插件接入说明](ONBOARDING.md#插件与版本匹配规范)为使用的客户端安装用户级插件。Claude Code 和 Codex 共用同一份薄 skill，只负责找到工具；完整操作规范由实际执行的 CLI 提供：
 
@@ -20,7 +20,7 @@ agentchat skills get          # 读取当前可执行文件内置的完整规范
 agentchat skills get --json   # 同时返回 CLI 版本和内容 SHA-256
 ```
 
-CLI 升级后，skill 下次使用时读取新 CLI 的规范。插件自身通过宿主更新；项目入口固定的旧 CLI 不会因全局程序升级而全部替换，需用新版 `install` 预览并应用本地入口更新，再读取该入口的 `skills get`。安装插件本身不加入房间，不启用项目指令或 hooks。
+CLI 升级后，skill 下次使用时读取新 CLI 的规范。插件自身通过宿主更新；项目入口固定的旧 CLI 不会因全局程序升级而全部替换，需用新版 `install` 预览并应用本地入口更新，再读取该入口的 `skills get`。Claude 插件自动加载短 SessionStart / SessionEnd hooks，Codex 仅使用薄 skill。插件不初始化无关项目，不写业务项目指令或设置；已有项目是否自动加入仍遵守 autoJoin 设置。
 
 程序默认提供 `~/.local/bin/agentchat` 入口，不修改 shell 配置；PATH 不包含该目录时，agent 使用安装器返回的绝对路径。日常操作由 agent 完成：
 
@@ -43,19 +43,17 @@ agentchat install --hooks                # 单独预览 Claude hooks
 agentchat install --hooks --apply        # 明确启用 hooks，不写项目指令
 ```
 
-只要求安装程序或创建房间时，完成后停止，不自动加入、切房或启用集成。默认加入支持主动收发；Codex 使用原生 queue，Claude 的 Channel 需要明确启用 hooks 并完成宿主启用，或由用户选择已验证版本的 socket 实验。通知自带本地 CLI 路由，不依赖项目指令文件。
+只要求安装程序或创建房间时，完成后停止，不自动加入、切房或启用项目文件集成。Codex 使用原生 queue，Claude 在 join 时自动尝试绑定当前会话的原生 socket；不再使用 Channel、MCP 收件进程或专用启动器。插件 hooks 自动随宿主加载，不需要每个项目安装 hooks；上面的 --hooks 仅保留为手动兼容方式。通知自带本地 CLI 路由，不依赖项目指令文件。
 
-以上默认行为从 `0.1.0-alpha.3` 开始。Alpha 1/2 用户需先升级全局程序，再用新版 `join` 更新本地入口；旧管理块和 hooks 不会被默认加入自动修补或删除。需要清理旧管理块时，显式预览 `uninstall --instructions`，确认范围后追加 `--apply`；hooks 可用 `uninstall --hooks` 单独移除。
+以上默认行为从 `0.1.0-alpha.3` 开始。旧版用户需先升级全局程序，再用新版 `install` 预览并应用本地入口更新；旧管理块和 hooks 不会被默认加入自动修补或删除。需要清理旧管理块时，显式预览 `uninstall --instructions`，确认范围后追加 `--apply`；hooks 可用 `uninstall --hooks` 单独移除。
 
 ## 当前状态
 
-这是 Alpha 版本 `0.1.0-alpha.4`。已实现插件薄 skill、CLI 内置版本匹配规范、程序一次安装、加入仅写本地状态、可选项目指令和 hooks、项目内命名房间、按会话选房、Claude Channel、显式原生 socket 实验接收和 Codex queue 通知。
+这是 Alpha 版本 `0.1.0-alpha.5`。已实现插件薄 skill、CLI 内置规范、程序一次安装、加入仅写本地状态、命名房间与按会话选房。Claude 插件自带生命周期 hooks，接收统一使用版本校验的原生 socket；Codex 继续使用 queue。Channel 代码、MCP SDK 依赖及专用启动流程已移除。
 
-原生组合需要分别验收：`join`、配置文件存在或通知接口返回成功均不代表自动接收已验证。通过 `doctor` 查看接收能力及 nonce 回传证据。
+`join`、安装成功或 socket 写出均不能证明模型已收信。通过 `doctor` 查看当前接收实例及 nonce 回传证据；不支持的版本会保留加入和主动读写能力，明确报告原因。
 
-在当前自定义本地网关下，Claude 的 Channel 显示 `not currently available`。用户明确选择原生 socket 实验后，已在同一个 Claude Code 2.1.312 会话完成新 nonce 回传，并完成与原 Codex 会话的双向请求/回复闭环。顺序进行的 10 分钟和 1 小时真实空闲验收均已通过，期间没有用户续期或模型心跳。详情见 [验证记录](docs/verification.md)。
-
-实验当前锁定 Claude Code 2.1.312、peerProtocol 1、交互 CLI；其他版本、平台和客户端组合未验收。Channel 和旧 hooks 的验证记录独立保留。
+当前 socket 仍锁定 Claude Code 2.1.312、peerProtocol 1。此前在 macOS arm64 的原交互 CLI 会话完成 nonce、双向闭环及真实空闲 10 分钟、1 小时验收，详情见 [验证记录](docs/verification.md)。这些历史证据不自动验证新用户、新会话或新实例；协议仍处于实验阶段。
 
 ## 目标体验
 
@@ -102,27 +100,14 @@ bun run build
 
 ## 运行方式
 
-用户选择保留当前网关并尝试原生 socket 后，agent 内部调用 `socket-config --apply`，对现有原生会话启用实验接收。无需重启 Claude 或新增收件服务；发送时直接连接原生收件箱。内部参数和目标发现由 agent 完成，日常仍使用 join / members / send / read。
+Claude 正常启动即可；安装用户级插件后，由宿主自动加载短生命周期 hooks。它们从真实 hook 输入取得身份并在退出时清理；不会轮询或长期监听。默认不自动加入新会话，项目明确启用 `install --auto-join --apply` 后，hooks 才在该已初始化工作区自动登记并绑定 socket，无关项目和新 worktree 不自动初始化。未装插件时仍可通过原生 socket 上下文执行 join。
 
-该适配不是 Channel 失败后的自动降级：只处理明确选择后产生的未预留通知，旧 Channel 通知不会重发。它保留原生入站规则和工具审批，不修改网关或认证，不使用子进程凭据冒充原生会话。版本不匹配、进程或 socket 实例变化时拒绝发送，需明确重新绑定和验证。`socket-config --disable --apply` 可退出实验，消息历史仍保留。具体协议与边界见 [原生 socket 实验](docs/experimental-socket.md)。
+join 自动绑定准确的受支持 peer，显式停用的绑定不会被重新打开。进程或 socket 实例变化时，只有新原生进程自己的 SessionStart 或显式 `socket-config --apply` 能重新绑定。版本不匹配会明确报告，保留主动收发，不启动其他接收方式。`socket-config --disable --apply` 停用当前接收；`install --no-auto-join --apply` 关闭未来自动加入。详细校验规则见 [原生 socket 适配](docs/experimental-socket.md)。
 
-Git 项目的集成目录位于 common directory 下的 `agentchat`，非 Git 项目使用 `.agentchat`。`default` 保留原有 `chat.db`，命名房间使用 `rooms/<名称>/chat.db`，各自只有 members/messages 两张表。同一仓库的 worktree 共用房间，各工作区分别准备本地状态并记录可选集成；不同 clone 不合并。Git 项目的运行数据不进入版本控制。
+Git 项目状态位于 common directory 下的 agentchat，非 Git 项目使用 .agentchat。default 保留原 chat.db，命名房间位于 rooms/<名称>/chat.db，各自只有 members/messages 两张表。worktree 共用房间、分别保存工作区配置；不同 clone 不合并。
 
-明确启用 hooks 和宿主功能后，Claude 可通过会话内的单向 Channel 持续接收：空闲只查询本地 SQLite，有定向通知才唤醒模型，无 300 秒收件窗口或用户续期。SessionStart / SessionEnd 只登记和清理；显式管理 hooks 时会移除本工具的旧 Stop 监听，并保留其他 hooks。普通加入不会读写这些配置。
+升级全局 CLI 和插件后，用新版 install 预览并应用旧项目私有入口更新，再读取该入口的 skills get。迁移会停用自有的旧私有 Channel 启动器；不关闭业务客户端、不自动修改旧项目 hooks/MCP 配置、不重放旧通知。旧消息、游标及不确定预留保留。
 
-安装器提供私有 `run` 入口。安装包固定使用版本缓存中的独立程序；源码安装固定使用安装时的 Bun，均不依赖调用方 PATH。`channel-config --apply` 由原 Claude agent 准备准确恢复入口；Codex 也可对已登记的确切 Claude 成员使用 `--to` 准备入口。用户退出原客户端后执行它，由宿主恢复同一会话并完成开发 Channel / MCP 的交互确认。以后仍从准备好的入口启动；预览阶段不能承诺宿主只确认一次。默认 `claude.command` 用于用户主动开始新的协作会话。工具不会后台另开业务会话。
+每个成员每 10 分钟默认最多 20 批通知，相隔至少 5 秒。按需投递受限时保留消息，不承诺后台补投。未知提交暂停跨房间保留；解除暂停只影响未来尝试。原生入站策略、网关、认证及工具审批保持宿主规则。
 
-启动入口每次生成独立标识，通过真实 SessionStart 的 `session_id` 与 Channel 握手。MCP 子进程无需继承 hook 注入的原生 UUID；旧启动上下文不能复用。Channel 的本地存活检查每隔约 15 秒更新，空闲不调用模型；这个内部租约不会使会话在长时间空闲后过期。
-
-默认每个房间的成员每 10 分钟最多 20 批通知，相隔至少 5 秒。限流后显示 `rate_limited` 和恢复时间；Channel 可持续等待，Codex 与实验 socket 按需通知，不承诺后台补投。未知提交的暂停按项目、原生会话和适配器保留，切房不能解除或重发旧批次。`doctor` 区分未选房间、接收存活、房间内 nonce 验证、限流、暂停和数据库故障。
-
-账号、组织策略、会话启用和协议版本仍可能限制 Channels；配置和 MCP 连接成功不证明模型能收信。Codex 的 queue 通知需要等当前轮次结束，不应在 shell 中阻塞等回复。
-
-`probe` 和 `bun run test:native` 是显式的真实联调入口，可能产生模型调用，不包含在默认自动化测试中。`bun run verify:native` 仅查询已有证据。
-
-长时间空闲验收使用 `bun run test:native:idle --seconds 600`，通过后再单独运行 `--seconds 3600`。该测试只运行本地计时器，到期发一次真实测试请求后退出，不等待回复；Claude 返回结果后通知原 Codex 继续核对，最后不再互相确认。`bun run verify:native:idle` 被动核对间隔、回复和原接收实例仍在。两次应顺序执行，机器及原会话保持运行，期间用户不再输入。加速时钟测试只属于自动化覆盖，不能代替真实等待。
-
-设计借鉴 Yobiru 的持久化消息与通知分离，以及 Cumora 的共享消息流和统一 CLI。这里保留来源说明，没有复制两者源码。
-
-- <https://github.com/chekusu/yobiru>
-- <https://github.com/yetone/cumora>
+`probe`、`bun run test:native` 和长期空闲测试会发送真实通知，可能产生模型调用；仅在用户授权的联调范围内运行。发出请求后结束当前轮次，不在 shell 阻塞等待回复。

@@ -3,14 +3,15 @@ import { createServer } from "node:net";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
-import { fixture, nativeIdentity, testEnv } from "./helpers.ts";
+import { cli, fixture, nativeIdentity, testEnv } from "./helpers.ts";
 import { Store } from "../src/store.ts";
 import * as peer from "../src/claude-peer.ts";
-import { configureSocket, saveSocketProof, socketBinding, socketProof } from "../src/socket-state.ts";
+import { automaticSocket, configureSocket, saveSocketProof, socketBinding, socketProof } from "../src/socket-state.ts";
 import { dispatchSocket } from "../src/socket-adapter.ts";
 import { pause, paused, receiver, resume } from "../src/runtime.ts";
 import { recordProbeReply, startProbe } from "../src/probe.ts";
 import { writeJson } from "../src/files.ts";
+import { endHook } from "../src/hooks.ts";
 import { spawnSync } from "node:child_process";
 import { createRoom, roomProject, selectRoom } from "../src/rooms.ts";
 
@@ -36,6 +37,67 @@ afterEach(async () => {
   await new Promise<void>(resolve => server.close(() => resolve()));
   if (oldConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = oldConfig;
   store.close(); rmSync(directory, { recursive: true, force: true }); f.cleanup();
+});
+test("join automatically binds its exact native socket without consuming or submitting any notification", () => {
+  store.send({ from: a.id, to: b.id, id: "pending-auto", body: "pending", notify: true });
+  const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! });
+  const first = cli(f.root, ["join"], env);
+  expect(first.status).toBe(0); expect(first.data.automatic_reception.enabled).toBe(true);
+  expect(first.data.reception.mode).toBe(peer.SOCKET_ADAPTER); expect(first.data.reception.state).toBe("armed_unverified");
+  expect(socketBinding(f.project, b)?.pid).toBe(process.pid);
+  expect(store.message("pending-auto").notify_batch_id).toBeNull(); expect(frames).toEqual([]);
+  expect(cli(f.root, ["join"], env).data.automatic_reception.configured).toBe(false);
+});
+test("unsupported Claude versions remain joined with a concrete error and no Channel fallback", () => {
+  metadata.version = "2.1.313"; writeFileSync(metaPath, JSON.stringify(metadata));
+  const result = cli(f.root, ["join"], testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! }));
+  expect(result.status).toBe(0); expect(result.data.automatic_reception.reason).toContain("Unverified Claude socket");
+  expect(result.data.reception.mode).toBe(peer.SOCKET_ADAPTER); expect(result.data.reception.transport_alive).toBe(false);
+  expect(socketBinding(f.project, b)).toBeNull(); expect(frames).toEqual([]);
+});
+test("only the new native process's SessionStart can automatically replace a stale instance, without replaying messages or proof", () => {
+  const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! });
+  expect(cli(f.root, ["join"], env).status).toBe(0);
+  expect(cli(f.root, ["install", "--auto-join", "--apply"], env).status).toBe(0);
+  const stale = { ...socketBinding(f.project, b)!, instance: "a".repeat(64) };
+  writeJson(join(f.project.room, "socket-sessions", `${b.session_ref}.json`), stale);
+  saveSocketProof(f.project, b, { nonce: "old", replyId: "old", verifiedAt: Date.now(), hostVersion: stale.version, adapter: peer.SOCKET_ADAPTER, receiverToken: stale.instance });
+  store.send({ from: a.id, to: b.id, id: "old-reservation", body: "keep", notify: true });
+  store.claim(b.id, 20);
+  const batch = store.message("old-reservation").notify_batch_id;
+  expect(automaticSocket(f.project, b).state).toBe("unavailable");
+  const result = spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), "hook", "plugin-session-start"],
+    { cwd: f.root, env, input: JSON.stringify({ session_id: b.session_ref, cwd: f.root, hook_event_name: "SessionStart" }), encoding: "utf8" });
+  expect(result.status).toBe(0); expect(socketBinding(f.project, b)?.instance).not.toBe(stale.instance);
+  expect(receiver(f.project, b).verification).toBe("unverified"); expect(socketProof(f.project, b, stale.instance)?.nonce).toBe("old");
+  expect(store.message("old-reservation").notify_batch_id).toBe(batch); expect(frames).toEqual([]);
+});
+test("explicit socket opt-out survives later automatic joining", () => {
+  configureSocket(f.project, b, true); configureSocket(f.project, b, true, true);
+  expect(automaticSocket(f.project, b).state).toBe("disabled"); expect(socketBinding(f.project, b)?.enabled).toBe(false);
+});
+test("socket opt-out before any binding survives join and room changes until explicitly enabled", () => {
+  configureSocket(f.project, b, true, true);
+  const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! });
+  expect(cli(f.root, ["join"], env).data.automatic_reception.state).toBe("disabled");
+  expect(receiver(f.project, b).state).toBe("disabled"); expect(socketBinding(f.project, b)).toBeNull();
+  createRoom(f.project, "review");
+  expect(cli(f.root, ["room", "use", "review"], env).data.automatic_reception.state).toBe("disabled");
+  configureSocket(f.project, b, true); expect(automaticSocket(f.project, b).enabled).toBe(true); expect(frames).toEqual([]);
+});
+test("SessionEnd removes socket capability before the native process exits and preserves pending rows", async () => {
+  cli(f.root, ["join"], testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! }));
+  endHook(f.project, { session_id: b.session_ref!, cwd: f.root, hook_event_name: "SessionEnd" });
+  expect(receiver(f.project, b).transport_alive).toBe(false);
+  store.send({ from: a.id, to: b.id, id: "after-end", body: "keep", notify: true });
+  expect((await dispatchSocket(store, f.project, b)).reason).toBe("native_session_ended");
+  expect(store.message("after-end").notify_batch_id).toBeNull();
+});
+test("automatic migration cannot clear an uncertain old Channel submission", () => {
+  pause(f.project, b, "channel_outcome_unknown");
+  const result = automaticSocket(f.project, b);
+  expect(result.state).toBe("unavailable"); expect(result.reason).toContain("uncertain notification pause");
+  expect(paused(f.project, b, "claude-channel")?.reason).toBe("channel_outcome_unknown"); expect(socketBinding(f.project, b)).toBeNull();
 });
 test("socket selection previews without writes; explicit selection pins the exact peer and never stores its credential", () => {
   const preview = configureSocket(f.project, b, false); expect(preview.experimental).toBe(true); expect(socketBinding(f.project, b)).toBeNull();

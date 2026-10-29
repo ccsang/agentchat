@@ -2,6 +2,18 @@
 
 日期：2026-10-28。开发环境：macOS arm64、Bun 1.3.14。
 
+## Alpha 5：插件生命周期 hooks 与移除 Channel（2026-10-29）
+
+本轮移除 Channel 接收器、MCP SDK 依赖、启动握手及专用恢复流程；Claude join 自动尝试绑定准确且版本受支持的原生 socket，Codex 继续使用 queue。原有 Channel 章节和回传数据仅作历史，不代表当前功能。
+
+本机 125 项自动化测试、类型检查、源码构建与独立程序验收通过。新增覆盖：join 不提交或预留通知；版本拒绝仍可加入；绑定前后显式停用跨 join/切房保留；只有新原生进程自身 SessionStart 能自动重绑变更实例；新实例不继承旧 nonce，旧消息预留不重置；SessionEnd 在进程仍活着时阻止新投递；旧 Channel unknown 暂停不被迁移清除；旧自有私有入口报废而用户入口不变。
+
+插件测试覆盖未初始化项目只向宿主私有环境持久化身份、已初始化且 autoJoin 开启时登记、默认关闭/明确停用/卸载、子 agent 忽略、原生 cwd 路由，以及含空格/单引号路径的 sh stdin 转发。独立程序在无外部 Bun/Node 的 PATH 中运行实际插件包装脚本，检查身份、工作区边界、自动加入、退出清理和卸载；没有加载业务项目 preload 或 dotenv。默认加入仍保留已提交或损坏的项目指令/hooks 文件和 Git exclude。
+
+隔离配置下，Claude Code 2.1.312 和 Codex CLI 0.165.0-alpha.1.2 均安装本地 marketplace 与新版插件，缓存 skill 与源码一致。Claude manifest 引用的 hooks 及脚本已进入安装缓存，SessionStart 包装脚本可调用独立程序；Codex 未声明 Claude hooks，也不存在会被默认发现的 hooks/hooks.json。Claude 插件/marketplace 严格 manifest 验证与 skill frontmatter 校验通过；插件目录检查另提示缺少图标，不阻断本地安装。
+
+四平台的检查、构建与独立包验收由发布流水线执行，全部通过后才发布。公开安装包与公开 marketplace 安装在发布后另行复验。以上为包、hook 执行及合成 peer 测试，本轮没有向用户真实会话发通知或重做长期空闲测试；不声称新模型会话自动收信已验证。历史 socket nonce/双向/10 分钟及 1 小时证据仍仅适用于下面记录的原版本、会话、default 房间和实例。
+
 ## Alpha 4：插件与内置规范（2026-10-29）
 
 `0.1.0-alpha.4` 增加插件薄 skill 和 skills list / skills get；完整规范作为文本资源编译进 CLI，由实际执行的版本输出。插件与 CLI 独立更新，旧项目入口通过显式本地 install 更新；默认加入不改项目文件的约定保留。
