@@ -7,17 +7,20 @@ import { uninstalled } from "./runtime.ts";
 import type { Member, Project } from "./types.ts";
 import { socketBinding } from "./socket-state.ts";
 import { installedCommand, installedToolExists } from "./executable.ts";
+import { integrationDir } from "./project.ts";
+import { roomName } from "./rooms.ts";
+import { workspaceDir } from "./workspace.ts";
 
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 export function launcherScript(project: Project, member?: Member, command = installedCommand(project)): string {
-  const args = [...command, "--project", project.root, "launch", "claude", ...(member ? ["--to", member.id] : [])];
+  const args = [...command, "--project", project.root, ...(member ? ["--room", roomName(project)] : []), "launch", "claude", ...(member ? ["--to", member.id] : [])];
   return `#!/bin/sh\n# AgentChat managed Claude entry. Host confirmations remain interactive.\nexec ${args.map(quote).join(" ")} "$@"\n`;
 }
 export function channelConfig(project: Project, member: Member, apply: boolean): Record<string, unknown> {
   requireThat(member.runtime === "claude" && member.session_ref, "E_IDENTITY", "Prepare a launcher for one exact registered Claude session");
   requireThat(installedToolExists(project) && !uninstalled(project), "E_CONFIG", "Install the project CLI before preparing Claude");
-  const path = join(project.room, "launchers", `${member.name}.command`), script = launcherScript(project, member);
-  if (apply) { privateDirectory(join(project.room, "launchers")); atomicWrite(path, script, 0o700); }
+  const path = join(workspaceDir(project), "launchers", roomName(project), `${member.name}.command`), script = launcherScript(project, member);
+  if (apply) { privateDirectory(join(workspaceDir(project), "launchers", roomName(project))); atomicWrite(path, script, 0o700); }
   return { ok: true, applied: apply, path, script, member_id: member.id, resumes_exact_session: true,
     selected_receiver: socketBinding(project, member)?.enabled ? "claude-socket-experimental" : "channel",
     launch_argv: [path], reception_verified: false,
@@ -35,7 +38,7 @@ export async function launchClaude(project: Project, member?: Member): Promise<n
   const env: NodeJS.ProcessEnv = { ...process.env, ...launch.env };
   for (const key of ["CODEX_THREAD_ID", "AGENTCHAT_CLAUDE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_AGENT_ID", "AGENTCHAT_SUBAGENT"]) delete env[key];
   try {
-    const path = join(project.room, "launches", `${launch.binding.id}.mcp.json`);
+    const path = join(integrationDir(project), "launches", `${launch.binding.id}.mcp.json`);
     const [command, ...prefix] = installedCommand(project);
     if (!useSocket) writeJson(path, { mcpServers: { agentchat: { command,
       args: [...prefix, "--project", project.root, "notify", "claude-channel"], env: launch.env } } });

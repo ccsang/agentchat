@@ -2,20 +2,30 @@
 
 ## 当前能力
 
-当前 Alpha `0.1.0-alpha.1` 提供 join、members、send、read，以及项目级 install、uninstall、doctor 和 probe。用户只需把本说明链接交给业务项目中的原生 agent；安装包自带运行环境，不要求用户克隆工具源码或另装 Bun / Node.js。
+当前 Alpha `0.1.0-alpha.2` 将程序安装、项目初始化、聊天室管理分开。程序安装一次；每个项目首次 `join` 自动初始化；`room create/list/use` 管理项目内房间。安装包自带运行环境，不要求用户克隆工具源码或另装 Bun / Node.js。
 
 首次接入按以下步骤由 agent 操作，用户无需复制 room 或 UUID：
 
-1. 确定用户当前业务项目的绝对目录；安装目标是该项目。当前安装包支持 macOS、Linux（glibc）的 arm64 / x64，Windows 尚未提供安装包。
-2. 从固定版本链接 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.1/install.sh` 下载到 agent 自己的临时目录，并阅读安装器。使用 HTTPS 下载，失败即停止，不执行错误页面或不完整文件。
-3. 执行 `sh <下载的安装器> --project <业务项目绝对目录>` 预览具体改动。安装器自动选择平台、校验下载和解压后的程序，准备版本缓存；不带 `--apply` 不改项目配置。在用户已授权安装的范围内，以相同命令追加 `--apply` 应用。它只维护项目管理块、登记 hooks 和启动入口，不改全局设置、PATH、网关或审批。
-4. 读取 JSON 返回的 `cli` 绝对路径，在各自要协作的原生会话中执行 `"<cli>" join`。随后也可使用项目 AGENTS.md / CLAUDE.md 的接入入口。Codex 从环境识别当前 thread；Claude 从 hook 环境或自己的 socket 元数据识别准确会话。不要替另一个会话声明身份。
+1. 先检查 `agentchat` 或默认 `$HOME/.local/bin/agentchat` 是否为支持 `room create/use` 的 AgentChat。已经安装时直接复用，换项目、开新会话、切房都不用重新下载安装器。支持 macOS、Linux（glibc）的 arm64 / x64；Windows 尚无安装包。
+2. 尚未安装或明确升级时，从 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.2/install.sh` 下载到 agent 临时目录，阅读后执行 `sh <安装器>`。只使用成功下载的 HTTPS 内容。它校验压缩包和程序，安装到版本缓存并提供全局命令，不初始化业务项目；不修改 shell 配置、网关或审批。不覆盖同名的无关用户程序。
+3. 读取返回的 `cli` 绝对路径，在用户要加入的业务项目目录执行 `"<cli>" join`，或传内部 `--project <业务项目绝对目录>`。首次加入会自动应用可备份、幂等的项目指令管理块、hooks 和启动入口，保留用户配置；以后新会话直接加入，不重复初始化。`install` 仍可用于显式预览、修复或升级项目入口，不是每次加入的前置步骤。
+4. 每个 agent 必须从自己的原生会话 `join`。Codex 从环境识别 thread；Claude 从 hook 环境或自身 socket 元数据识别准确会话。身份缺失时停止并报告，不替其他会话声明身份。查看返回的 members、initialization、reception；当前房间默认是 `default` 或该原生会话上次选择的房间。
 5. 默认 Channel：已打开的 Claude 在原会话运行 `"<cli>" channel-config --apply`，由工具准备准确恢复入口；其他 agent 可通过 `--to` 为确切已登记的 Claude 准备。提示用户退出原客户端，并在自己的终端执行这个入口，完成宿主的开发 Channel / MCP 确认。入口恢复同一会话，不能在 agent shell 中启动嵌套会话。用户明确选择原生 socket 实验时改按本文末节操作，不需要先恢复 Channel。
 6. 后续仍用准备好的启动入口。查看 join 返回的成员与 reception，使用 send/read 协作。`probe` 会产生真实通知，仅在用户授权的联调范围内使用。每个用户、原生会话和接收实例都需自己的回传证据；本仓库的验证记录不能证明别人的环境已接通。
 
 只有完成当前所选接收实例的 nonce 回传才能报告自动接收已验证。Channel 随原会话持续运行，空闲不调用模型、不发心跳消息，也不要求用户续期。socket 实验目前仅验收了 macOS arm64、Claude Code 2.1.312 / peerProtocol 1 的交互 CLI；其他原生组合不能仅凭安装成功报告支持。
 
-版本程序缓存路径由安装器维护，项目 hooks 和 run 固定引用该版本；不要在项目仍使用它时删除缓存。源码开发方式为克隆仓库后 `bun install --frozen-lockfile --ignore-scripts`，再用 `bun run bin/agentchat --project <业务项目> install`，日常用户优先使用以上安装包。升级和卸载见 [分发说明](docs/distribution.md)。
+程序入口默认在 `~/.local/bin/agentchat`，项目入口仍会固定引用初始化时的版本缓存；不要删除仍被项目使用的缓存。源码用户 `bun install --frozen-lockfile --ignore-scripts` 后直接用 `bun run bin/agentchat --project <业务项目> join`。升级和卸载见 [分发说明](docs/distribution.md)。
+
+## 创建与选择聊天室
+
+用户需要新聊天室时，agent 执行 `room create <名称>`，再 `room use <名称>` 加入并选择。命名房间必须先创建；`join --room <名称>` 也可加入已有房间。`room list` / `room current` 只读，不初始化项目。名称使用 1–64 位小写字母、数字、下划线或短横线，由 agent 根据用户意图选择，不让用户搬运目录或 UUID。
+
+选择按项目内的原生 runtime + session UUID 保存，普通终端没有原生身份时可创建和列出房间，切换应由 agent 在自己的原会话执行。一个会话只选择一个收信房间；其他房间的成员、消息和游标保留。`--room <名称>` 用于单次 read/send/mark，不改变默认选择。
+
+通知明确给出房间。即使已经切到别的房间，处理迟到通知也必须用通知中的 `--room` 读取、回复和 mark；仅处理列出的消息 ID，并检查已有回复。不能用另一个房间同名的消息或旧 nonce 代替。
+
+新版本 Channel 会跟随本会话的选择，无需每个房间重新启动。短暂的 switching_room 表示进程仍在等待房间绑定，可稍后检查 doctor，不应重新安装或另开客户端。旧版仍在运行的 Channel 不支持此路由时，工具会要求通过更新后的启动入口恢复原会话，然后才能切房。socket 实验端点复用此前明确选择的原生会话，证明仍按房间保存，新房间需自己的 nonce；未知提交暂停跨房间保留。
 
 ## 自助接入入口
 

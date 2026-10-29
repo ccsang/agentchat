@@ -8,8 +8,10 @@ import { privateDirectory } from "./files.ts";
 import { notice } from "./notify.ts";
 import type { Member, Project } from "./types.ts";
 import type { Store } from "./store.ts";
+import { memberRoomSelected } from "./rooms.ts";
 
 export async function dispatchSocket(store: Store, project: Project, member: Member): Promise<Record<string, unknown>> {
+  if (!memberRoomSelected(project, member)) return { state: "held", reason: "room_not_selected", automatic_retry: false };
   privateDirectory(join(project.room, "notifications"));
   const release = tryLock(join(project.room, "notifications", `${member.id}.lock`));
   if (!release) return { state: "held", reason: "adapter_busy" };

@@ -35,3 +35,7 @@ export function identify(env: NodeJS.ProcessEnv = process.env): Identity {
   if (codex) return { runtime: "codex", session: sessionId(codex) };
   throw new ChatError("E_IDENTITY", "No native session identity. In Claude, install the project hooks and reload the session; do not supply a guessed UUID.");
 }
+export function optionalIdentity(env: NodeJS.ProcessEnv = process.env): Identity | undefined {
+  if (!["CODEX_THREAD_ID", "AGENTCHAT_CLAUDE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_AGENT_ID", "AGENTCHAT_SUBAGENT"].some(key => env[key])) return undefined;
+  return identify(env);
+}

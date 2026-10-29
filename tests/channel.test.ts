@@ -11,6 +11,7 @@ import { registerHook, endHook } from "../src/hooks.ts";
 import { runChannel } from "../src/channel.ts";
 import { paused, receiver, resume, state } from "../src/runtime.ts";
 import { writeJson } from "../src/files.ts";
+import { createRoom, roomProject, selectRoom } from "../src/rooms.ts";
 
 async function until(check: () => boolean, ms = 4000) {
   const end = Date.now() + ms;
@@ -46,6 +47,54 @@ test("Channel emits IDs after initialization, without tools, permission relay or
     expect(h.store.member(h.b.id).read_seq).toBe(0);
     expect(h.store.claim(h.b.id, 20, h.now() + 6000).batch).toBeNull();
   } finally { await h.close(); }
+});
+test("one native Channel follows session room selection and preserves both rooms' reservations", async () => {
+  const h = await setup(); createRoom(h.project, "review"); const target = roomProject(h.project, "review"), other = new Store(target.room);
+  try {
+    const a = other.join({ runtime: h.a.runtime, session: h.a.session_ref }), b = other.join({ runtime: h.b.runtime, session: h.b.session_ref });
+    h.store.send({ from: h.a.id, to: h.b.id, id: "same-id", body: "default payload", notify: true, now: h.now() });
+    await until(() => h.events.length === 1);
+    const token = state(h.project, h.b)!.listener!.token;
+    selectRoom(target, { runtime: h.b.runtime, session: h.b.session_ref });
+    expect(receiver(target, b, h.now()).state).toBe("switching_room");
+    await until(() => !!state(target, b)?.listener);
+    expect(state(target, b)!.listener!.token).toBe(token);
+    expect(state(h.project, h.b)?.listener).toBeUndefined();
+    expect(receiver(h.project, h.b, h.now()).state).toBe("room_not_selected");
+    h.store.send({ from: h.a.id, to: h.b.id, id: "wait-in-default", body: "retained", notify: true, now: h.now() });
+    other.send({ from: a.id, to: b.id, id: "same-id", body: "review payload", notify: true, now: h.now() });
+    await until(() => h.events.length === 2);
+    expect(h.events[1]!.content).toContain("--room review read --new");
+    expect(h.events[1]!.content).not.toContain("review payload");
+    expect(h.store.message("wait-in-default").notify_batch_id).toBeNull();
+    h.advance(6000); selectRoom(h.project, { runtime: h.b.runtime, session: h.b.session_ref });
+    await until(() => h.events.length === 3);
+    expect(h.events[2]!.content).toContain("--room default read --new");
+    expect(h.events[2]!.content).toContain("wait-in-default");
+    expect(h.events[2]!.content).not.toContain("Messages: same-id");
+  } finally { other.close(); await h.close(); }
+});
+test("switching rooms does not bypass an unknown Channel submission pause", async () => {
+  const h = await setup(); createRoom(h.project, "review"); const target = roomProject(h.project, "review"), other = new Store(target.room);
+  const original = h.serverTransport.send.bind(h.serverTransport);
+  const mock = spyOn(h.serverTransport, "send").mockImplementation(async message => {
+    if ("method" in message && message.method === "notifications/claude/channel") throw new Error("uncertain write");
+    await original(message);
+  });
+  try {
+    h.store.send({ from: h.a.id, to: h.b.id, id: "uncertain-old-room", body: "unknown", notify: true, now: h.now() });
+    await until(() => !!paused(h.project, h.b)); mock.mockRestore();
+    const a = other.join({ runtime: h.a.runtime, session: h.a.session_ref }), b = other.join({ runtime: h.b.runtime, session: h.b.session_ref });
+    selectRoom(target, { runtime: h.b.runtime, session: h.b.session_ref });
+    await until(() => !!state(target, b)?.listener);
+    other.send({ from: a.id, to: b.id, id: "new-room", body: "future", notify: true, now: h.now() });
+    await Bun.sleep(30);
+    expect(other.message("new-room").notify_batch_id).toBeNull();
+    expect(receiver(target, b, h.now()).state).toBe("paused");
+    resume(target, b); await until(() => h.events.length === 1);
+    expect(h.events[0]!.content).toContain("new-room");
+    expect(h.store.message("uncertain-old-room").notify_batch_id).not.toBeNull();
+  } finally { mock.mockRestore(); other.close(); await h.close(); }
 });
 test("MCP can initialize before SessionStart; no member is guessed or message reserved before binding", async () => {
   const h = await setup(true);

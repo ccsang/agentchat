@@ -1,6 +1,6 @@
 export type Runtime = "codex" | "claude" | "generic";
 export interface Identity { runtime: Runtime; session: string | null }
-export interface Project { root: string; room: string; gitCommonDir: string | null }
+export interface Project { root: string; room: string; gitCommonDir: string | null; integration?: string; roomName?: string }
 export interface Member {
   id: string; name: string; runtime: Runtime; session_ref: string | null;
   read_seq: number; created_at: number;

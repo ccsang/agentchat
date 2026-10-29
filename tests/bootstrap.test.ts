@@ -21,6 +21,7 @@ beforeEach(() => {
   writeFileSync(join(bin, "curl"), `#!/bin/sh\nset -eu\noutput=\nurl=\nwhile [ "$#" -gt 0 ]; do\n case "$1" in\n  --output) output=$2; shift 2 ;;\n  https://github.com/ccsang/agentchat/releases/download/*) url=$1; shift ;;\n  *) shift ;;\n esac\ndone\n[ -n "$url" ] && [ -n "$output" ]\nname=\${url##*/}\nprintf '%s\\n' "$name" >> "$FIXTURE_LOG"\nif [ "\${FIXTURE_FAIL_DOWNLOAD:-0}" = 1 ] && [ "$name" != SHA256SUMS ]; then printf partial > "$output"; exit 22; fi\ncp "$FIXTURE_ASSETS/$name" "$output"\n`, { mode: 0o700 });
   writeFileSync(join(bin, "uname"), `#!/bin/sh\ncase "$1" in -s) printf '%s\\n' "\${FIXTURE_PLATFORM:-${platform === "darwin" ? "Darwin" : "Linux"}}" ;; -m) printf '%s\\n' '${arch === "arm64" ? "aarch64" : "x86_64"}' ;; esac\n`, { mode: 0o700 });
   env = testEnv({ PATH: `${bin}:/usr/bin:/bin`, HOME: f.root, AGENTCHAT_INSTALL_DIR: join(f.root, "cache with space's"),
+    AGENTCHAT_BIN_DIR: join(f.root, "global-bin"),
     FIXTURE_ASSETS: assets, FIXTURE_LOG: log, FIXTURE_EXECUTION: execution });
 });
 afterEach(() => f.cleanup());
@@ -34,6 +35,12 @@ test("bootstrap verifies a pinned standalone download, preserves arguments and r
   expect(install(["--apply"]).status).toBe(0);
   expect(readFileSync(execution, "utf8").split("\n")).toEqual(["--project", f.root, "install", "--apply", ""]);
   expect(readFileSync(log, "utf8").trim().split("\n")).toEqual(["SHA256SUMS", `${name}.gz`, "SHA256SUMS"]);
+});
+test("ordinary program installation does not require or initialize a project", () => {
+  const result = spawnSync("/bin/sh", [installer], { cwd: f.root, env, encoding: "utf8", timeout: 5000 });
+  expect(result.status).toBe(0); expect(readFileSync(execution, "utf8")).toBe("setup\n");
+  expect(existsSync(join(f.root, ".agentchat"))).toBe(false); expect(existsSync(join(f.root, ".claude"))).toBe(false);
+  expect(existsSync(join(f.root, "AGENTS.md"))).toBe(false);
 });
 test("a corrupt download is never executed and cannot modify project settings", () => {
   writeFileSync(join(assets, `${name}.gz`), "corrupt download");
