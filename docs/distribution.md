@@ -4,6 +4,10 @@
 
 ## 分发结构
 
+- GitHub 仓库同时提供 Claude 的 .claude-plugin/marketplace.json 和 Codex 的 .agents/plugins/marketplace.json，指向同一个 plugins/agentchat。薄 skill 只有一份；插件本身独立版本化，CLI 后续更新不强制重发未改变的插件。
+- 插件包含便携 plugin.json 与宿主兼容描述，默认推荐用户级安装，不内置业务项目路径、会话或房间，也没有执行 hooks/MCP。程序安装器不会顺带注册插件。
+- 详细协作规范编译进 CLI，由 skills get 提供；--json 额外返回版本和内容哈希，skills list 提供发现。命令不需要项目、身份、外部 Markdown 或网络；读取不会初始化房间或写配置。
+
 - GitHub Release 提供 macOS / Linux 的 arm64、x64 独立程序压缩包、SHA256SUMS、安装器、接入说明及许可证。
 - 独立程序包含 Bun 1.3.14 及 CLI 依赖，不要求用户另装 Bun、Node.js 或克隆源码。Linux 包使用 glibc；Windows 尚未提供安装包。
 - 安装器按系统和 CPU 选择包，先校验压缩包，再校验解压后的程序；校验通过前不会执行下载内容。不修改 PATH、全局 agent 设置、认证或审批。
@@ -16,7 +20,7 @@
 
 不要删除仍被项目引用的版本缓存。移动项目后，用已安装程序的 install 预览并应用以修复私有入口；已启用的 hooks 需要单独显式更新，无需重新下载程序。旧活跃 Channel 升级后，需要通过新入口恢复原会话才能切房；新版本 Channel 的日常切房无需重启。
 
-默认不改项目文件从 0.1.0-alpha.3 开始。升级时先运行新版安装器，再用全局新版 join 更新旧项目的私有入口；原项目 run 仍可能指向 Alpha 1/2，必须检查 --version。升级不会自动修补或删除旧管理块、hooks；明确需要时分别预览 install/uninstall --instructions 或 --hooks，再应用所选范围。通知自带本地 CLI 路由，普通通信不需要这两类项目文件。
+默认不改项目文件从 Alpha 3 开始，内置规范从 Alpha 4 开始。升级时先运行新版安装器；已初始化的项目入口用全局新版 install 预览并 --apply 更新本地运行文件，再读取该入口的 skills get。重复 join 不替换已固定的旧程序。升级不自动修补或删除旧管理块、hooks；明确需要时分别预览 install/uninstall --instructions 或 --hooks，再应用所选范围。通知自带本地 CLI 路由，普通通信不需要这两类项目文件。
 
 ## 验证与构建
 
@@ -26,7 +30,7 @@ bun run check
 bun test tests
 bun run build
 bun run build:release
-bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.3-darwin-arm64
+bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.4-darwin-arm64
 ```
 
 `build:release --target linux-x64` 等入口可交叉编译；release workflow 在四种原生 runner 上分别运行测试、构建和独立程序验收。验收使用全新目录、带空格/引号的路径及不含开发工具的 PATH，检查程序安装与同名命令保护、默认加入不改项目文件、显式可选集成、后续加入、房间切换、hooks、SQLite 收发/mark 和卸载，不向真实会话发通知。

@@ -2,6 +2,16 @@
 
 日期：2026-10-28。开发环境：macOS arm64、Bun 1.3.14。
 
+## Alpha 4：插件与内置规范（2026-10-29）
+
+`0.1.0-alpha.4` 增加插件薄 skill 和 skills list / skills get；完整规范作为文本资源编译进 CLI，由实际执行的版本输出。插件与 CLI 独立更新，旧项目入口通过显式本地 install 更新；默认加入不改项目文件的约定保留。
+
+本机 139 项测试通过，新增检查：即使项目路径不存在、Git 不可用、原生身份冲突，规范读取仍成功且不创建文件；Markdown 与 JSON 内容逐字相同，版本与内容哈希一致；无效标志和未知规范拒绝，不进入 join；安装后的私有 JS bundle 无需独立 Markdown；两个 marketplace 指向同一份 skill，便携与宿主 manifest 身份/版本一致。
+
+独立安装包验收核对临时移动后的二进制和项目固定入口返回相同版本/内容，且读取不会初始化项目。宿主插件识别使用隔离用户配置；原有真实会话与插件配置不作为测试对象。四平台结果由发布流水线记录，公开下载另行复验。安装/发现/协议读取不是模型触发或原生收信验证，本轮不发送真实通知。
+
+本机 Claude Code 2.1.312 与 Codex CLI 0.165.0-alpha.1.2 已在临时用户配置中完成 marketplace 注册、插件安装，安装缓存中的薄 skill 与共享源码逐字匹配。Claude 插件与 marketplace 严格验证通过，skill frontmatter 校验通过。该结果仅证明这些客户端能安装此包，不外推其他宿主版本或模型触发效果。
+
 ## Alpha 3：默认加入不改项目文件（2026-10-29）
 
 `0.1.0-alpha.3` 将本地运行状态和项目文件集成分开。默认 join / room use / install 不读取或改写 AGENTS.md、CLAUDE.md、.claude/settings.local.json 或 Git exclude；--instructions 与 --hooks 独立预览、启用和移除。旧版本只升级私有入口，不自动修补或删除原有集成。

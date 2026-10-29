@@ -1,0 +1,12 @@
+{
+  "name": "agentchat",
+  "interface": { "displayName": "AgentChat" },
+  "plugins": [
+    {
+      "name": "agentchat",
+      "source": { "source": "local", "path": "./plugins/agentchat" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -19,5 +19,5 @@ export function setupProgram(): Record<string, unknown> {
   const executable = realpathSync(process.execPath), quoted = `'${executable.replaceAll("'", "'\\''")}'`;
   atomicWrite(cli, `#!/bin/sh\n${marker}exec ${quoted} "$@"\n`, 0o755);
   return { ok: true, version, cli, executable, program_installed: true, project_initialized: false,
-    next: "Run join inside a project for local state only. Project instructions and hooks require separate explicit integration flags" };
+    next: "Read skills get for this CLI's protocol. Join inside a project for local state only; project instructions and hooks are separate explicit options" };
 }

@@ -10,7 +10,17 @@
 
 > 阅读这个链接，安装 AgentChat 程序，然后加入当前项目协作。
 
-程序本机安装一次；`join` 只准备本地运行状态、加入房间，不修改 `AGENTS.md`、`CLAUDE.md` 或 hooks 配置。换项目、开新会话、建房和切房都不需要重装。无需另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.3)。
+程序本机安装一次；`join` 只准备本地运行状态、加入房间，不修改 `AGENTS.md`、`CLAUDE.md` 或 hooks 配置。换项目、开新会话、建房和切房都不需要重装。无需另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.4)。
+
+希望新会话能发现 AgentChat 时，按[插件接入说明](ONBOARDING.md#插件与版本匹配规范)为使用的客户端安装用户级插件。Claude Code 和 Codex 共用同一份薄 skill，只负责找到工具；完整操作规范由实际执行的 CLI 提供：
+
+```sh
+agentchat skills list
+agentchat skills get          # 读取当前可执行文件内置的完整规范，无需加入或项目初始化
+agentchat skills get --json   # 同时返回 CLI 版本和内容 SHA-256
+```
+
+CLI 升级后，skill 下次使用时读取新 CLI 的规范。插件自身通过宿主更新；项目入口固定的旧 CLI 不会因全局程序升级而全部替换，需用新版 `install` 预览并应用本地入口更新，再读取该入口的 `skills get`。安装插件本身不加入房间，不启用项目指令或 hooks。
 
 程序默认提供 `~/.local/bin/agentchat` 入口，不修改 shell 配置；PATH 不包含该目录时，agent 使用安装器返回的绝对路径。日常操作由 agent 完成：
 
@@ -39,7 +49,7 @@ agentchat install --hooks --apply        # 明确启用 hooks，不写项目指�
 
 ## 当前状态
 
-这是 Alpha 版本 `0.1.0-alpha.3`。已实现程序一次安装、加入仅写本地状态、可选项目指令和 hooks、项目内命名房间、按会话选房、Claude Channel、显式原生 socket 实验接收和 Codex queue 通知。
+这是 Alpha 版本 `0.1.0-alpha.4`。已实现插件薄 skill、CLI 内置版本匹配规范、程序一次安装、加入仅写本地状态、可选项目指令和 hooks、项目内命名房间、按会话选房、Claude Channel、显式原生 socket 实验接收和 Codex queue 通知。
 
 原生组合需要分别验收：`join`、配置文件存在或通知接口返回成功均不代表自动接收已验证。通过 `doctor` 查看接收能力及 nonce 回传证据。
 
