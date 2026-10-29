@@ -2,9 +2,9 @@
 set -eu
 umask 077
 
-AGENTCHAT_VERSION="v0.1.0-alpha.1"
+AGENTCHAT_VERSION="v0.1.0-alpha.2"
 release="https://github.com/ccsang/agentchat/releases/download/$AGENTCHAT_VERSION"
-project="$PWD"
+project=""
 apply=0
 stage=""
 fail() { printf 'AgentChat: %s\n' "$*" >&2; exit 1; }
@@ -18,17 +18,22 @@ while [ "$#" -gt 0 ]; do
     --apply) apply=1; shift ;;
     --help|-h)
       printf '%s\n' "AgentChat $AGENTCHAT_VERSION installer" \
-        'Usage: sh install.sh [--project DIR] [--apply]' \
+        'Usage: sh install.sh' \
         'Downloads and verifies the standalone CLI; no Bun or Node.js installation is needed.' \
-        'Without --apply, project configuration is only previewed.' \
-        'AGENTCHAT_INSTALL_DIR overrides the versioned executable cache.'
+        'Installs the program once; run agentchat join inside each project to initialize it.' \
+        'AGENTCHAT_INSTALL_DIR overrides the cache; AGENTCHAT_BIN_DIR overrides the command directory.' \
+        'Legacy explicit project preview/repair: --project DIR [--apply].'
       exit 0 ;;
     *) fail "Unknown option: $1" ;;
   esac
 done
 
-[ -d "$project" ] || fail "Project directory does not exist: $project"
-project=$(cd "$project" && pwd -P)
+if [ -n "$project" ]; then
+  [ -d "$project" ] || fail "Project directory does not exist: $project"
+  project=$(cd "$project" && pwd -P)
+elif [ "$apply" -eq 1 ]; then
+  fail '--apply requires --project for legacy project repair; ordinary installation needs neither'
+fi
 case "$(uname -s)" in Darwin) platform=darwin ;; Linux) platform=linux ;; *) fail 'This Alpha supports macOS and Linux only' ;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64 ;; x86_64|amd64) arch=x64 ;; *) fail 'Unsupported CPU architecture' ;; esac
 for tool in curl gzip awk mktemp; do command -v "$tool" >/dev/null 2>&1 || fail "Required tool is missing: $tool"; done
@@ -75,6 +80,10 @@ actual=$("$binary" --version) || fail 'The executable cannot run on this system;
 cleanup
 stage=""
 trap - 0 1 2 15
+if [ -z "$project" ]; then
+  exec "$binary" setup
+fi
+"$binary" setup > /dev/null
 if [ "$apply" -eq 1 ]; then
   exec "$binary" --project "$project" install --apply
 else

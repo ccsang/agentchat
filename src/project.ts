@@ -5,6 +5,11 @@ import { spawnSync } from "node:child_process";
 import { requireThat } from "./errors.ts";
 import type { Project } from "./types.ts";
 
+export function integrationDir(project: Project): string { return project.integration ?? project.room; }
+export function baseProject(project: Project): Project {
+  return { ...project, integration: integrationDir(project), room: integrationDir(project), roomName: "default" };
+}
+
 export function discoverProject(cwd = process.cwd(), roomOverride?: string): Project {
   const current = realpathSync(cwd);
   let gitMarker = false;

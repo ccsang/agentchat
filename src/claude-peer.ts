@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { createConnection } from "node:net";
 import { ChatError, requireThat } from "./errors.ts";
 import { regularFile } from "./files.ts";
-import { discoverProject } from "./project.ts";
+import { discoverProject, integrationDir } from "./project.ts";
 import type { Member, Project } from "./types.ts";
 
 export const SOCKET_ADAPTER = "claude-socket-experimental";
@@ -18,7 +18,7 @@ interface PeerRecord {
 }
 export interface PeerBinding {
   enabled: boolean; pid: number; session: string; procStart: string; version: string;
-  cwd?: string;
+  cwd?: string; projectDir?: string;
   metadataPath: string; socketPath: string; realSocketPath: string; socketDev: number; socketIno: number;
   instance: string; configuredAt: number;
 }
@@ -55,14 +55,14 @@ function inspect(project: Project, member: Member, path: string, expected?: Peer
   const value = record(path);
   requireThat(member.runtime === "claude" && value.sessionId === member.session_ref, "E_IDENTITY", "Peer metadata belongs to a different native Claude session");
   requireThat(value.peerProtocol === 1 && SOCKET_VERSIONS.includes(value.version) && value.kind === "interactive" && value.entrypoint === "cli", "E_PEER_VERSION", "Unverified Claude socket protocol/version or client kind; experimental adapter refuses this combination");
-  requireThat(typeof value.cwd === "string" && (expected?.cwd === value.cwd || discoverProject(value.cwd).room === project.room), "E_PROJECT", "Native Claude peer belongs to another project room");
+  requireThat(typeof value.cwd === "string" && (expected?.projectDir === integrationDir(project) && expected.cwd === value.cwd || integrationDir(discoverProject(value.cwd)) === integrationDir(project)), "E_PROJECT", "Native Claude peer belongs to another project");
   requireThat(typeof value.procStart === "string" && value.procStart.trim().replace(/\s+/g, " ") === processStart(value.pid), "E_PEER", "Native PID was reused or its process-start evidence changed");
   const socketPath = value.messagingSocketPath;
   requireThat(typeof socketPath === "string" && isAbsolute(socketPath) && basename(socketPath) === `${value.pid}.sock`, "E_PEER", "Native socket path does not match the exact peer PID");
   ownedDirectory(dirname(socketPath), true);
   const socket = lstatSync(socketPath);
   requireThat(socket.isSocket() && !socket.isSymbolicLink() && (!process.getuid || socket.uid === process.getuid()) && (socket.mode & 0o077) === 0, "E_PERMISSIONS", "Native socket must be an owned private socket");
-  const binding = { enabled: true, pid: value.pid, session: value.sessionId, procStart: value.procStart, version: value.version, cwd: value.cwd,
+  const binding = { enabled: true, pid: value.pid, session: value.sessionId, procStart: value.procStart, version: value.version, cwd: value.cwd, projectDir: integrationDir(project),
     metadataPath: path, socketPath, realSocketPath: canonicalSocketPath(socketPath), socketDev: socket.dev, socketIno: socket.ino,
     instance: "", configuredAt: expected?.configuredAt ?? Date.now() };
   binding.instance = createHash("sha256").update(JSON.stringify([binding.pid, binding.session, binding.procStart, binding.version,
@@ -107,7 +107,7 @@ export function discoverPeer(project: Project, member: Member, env: NodeJS.Proce
     if (value.sessionId !== member.session_ref) continue;
     try {
       if (typeof value.procStart === "string" && value.procStart.trim().replace(/\s+/g, " ") === processStart(value.pid) &&
-          typeof value.cwd === "string" && discoverProject(value.cwd).room === project.room) liveMatches++;
+          typeof value.cwd === "string" && integrationDir(discoverProject(value.cwd)) === integrationDir(project)) liveMatches++;
     } catch { /* A stale advertisement is never selected as a replacement. */ }
     try { matches.push(inspect(project, member, path)); } catch (error) { diagnostic = error; }
   }

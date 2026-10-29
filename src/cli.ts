@@ -1,25 +1,31 @@
 import { parseArgs } from "node:util";
 import { version } from "../package.json";
-import { discoverProject } from "./project.ts";
-import { identify } from "./identity.ts";
+import { baseProject, discoverProject } from "./project.ts";
+import { identify, optionalIdentity } from "./identity.ts";
 import { Store } from "./store.ts";
 import { errorResult, requireThat } from "./errors.ts";
-import { receiver, reportChannelUnavailable } from "./runtime.ts";
+import { receiver, reportChannelUnavailable, state } from "./runtime.ts";
 import { notifyMember, paused, resume } from "./notify.ts";
-import { applyInstall, channelConfig, planInstall, preview } from "./install.ts";
+import { applyInstall, channelConfig, ensureProject, planInstall, preview } from "./install.ts";
 import { endHook, registerHook, waitHook } from "./hooks.ts";
 import type { HookInput } from "./hooks.ts";
-import type { Member } from "./types.ts";
+import type { Identity, Member, Project } from "./types.ts";
 import { recordProbeReply, startProbe } from "./probe.ts";
 import { launchClaude } from "./launch.ts";
 import { waitForLaunchHost } from "./binding.ts";
 import { configureSocket } from "./socket-state.ts";
+import { socketBinding } from "./socket-state.ts";
+import { createRoom, legacyMember, listRooms, resolveRoom, roomExists, roomName, selectRoom, withRoomSelection } from "./rooms.ts";
+import { setupProgram } from "./program.ts";
 
 const HELP = `AgentChat ${version}
 Local project chat for coding agents. Output is JSON unless --help/--version is used.
 
 Daily commands (project and native identity are discovered automatically):
-  join [--name NAME]                  Join this native session, idempotently.
+  join [--room NAME] [--name NAME]    Initialize this project on first join; join/select a room.
+  room create NAME                   Create a room without reinstalling the program or project.
+  room list | current                Inspect rooms without changing selection.
+  room use NAME                      Join/select an existing room for this native session only.
   members                            List registered members; no inferred online status.
   send [--to NAME|ID | --reply-to ID] [--notify] [--id ID] --text TEXT
   send [--to NAME|ID | --reply-to ID] [--notify] [--id ID] --stdin
@@ -27,6 +33,7 @@ Daily commands (project and native identity are discovered automatically):
 
 Setup / diagnostics:
   install [--apply] [--auto-join | --no-auto-join] [--budget N] [--window-seconds N] [--codex-bin PATH]
+                                     Advanced project repair/upgrade; ordinary join initializes it.
   uninstall [--apply]                 Remove only owned config; keep history.
   doctor                             Report current identity and receiver evidence.
   probe [--to NAME|ID]                Native nonce probe; may use model quota.
@@ -37,9 +44,29 @@ Setup / diagnostics:
   socket-config [--to NAME|ID] [--apply] [--disable]  Opt in/out of the version-locked native socket experiment.
   launch claude [--to NAME|ID]        User-terminal entry; host consent remains interactive.
 
-Advanced / testing: --project DIR, --room DIR, --as MEMBER; join --generic --name NAME.
+Advanced / testing: --project DIR, --room NAME, --as MEMBER; join --generic --name NAME.
+Explicit --room on read/send/mark routes that command only, without changing session selection.
 Normal onboarding never requires the user to copy these parameters or a native UUID.
 `;
+
+async function joinProject(project: Project, identity: Identity, name?: string): Promise<Record<string, unknown>> {
+  return withRoomSelection(project, identity, async () => {
+    if (identity.runtime === "claude" && roomName(project) !== "default") {
+      const old = legacyMember(project, { runtime: identity.runtime, session_ref: identity.session } as Member);
+      if (old && state(baseProject(project), old)?.listener?.routingVersion !== 2 && !socketBinding(project, old)?.enabled) {
+        requireThat(!receiver(baseProject(project), old).transport_alive, "E_RECEIVER", "The older Channel cannot switch rooms; restore this session through the updated project launcher first");
+      }
+    }
+    const initialization = await ensureProject(project);
+    requireThat(roomName(project) === "default" || roomExists(project), "E_ROOM", "Room no longer exists");
+    const store = new Store(project.room, { create: roomName(project) === "default" });
+    try {
+      const member = store.join(identity, name);
+      selectRoom(project, identity);
+      return { ok: true, joined: true, project, room: roomName(project), member, members: store.members(), initialization, reception: receiver(project, member) };
+    } finally { store.close(); }
+  });
+}
 
 async function stdin(limit: number): Promise<string> {
   const chunks: Buffer[] = []; let size = 0;
@@ -60,6 +87,10 @@ export async function runCli(args: readonly string[]): Promise<number> {
   let hook = args.some(arg => arg.startsWith("--agentchat-managed="));
   let store: Store | undefined;
   try {
+    if (args[0] === "setup") {
+      requireThat(args.length === 1, "E_USAGE", "Program setup takes no project or session arguments");
+      console.log(JSON.stringify(setupProgram())); return 0;
+    }
     const { values: v, positionals: p } = parseArgs({ args: [...args], allowPositionals: true, strict: true, options: {
       project: { type: "string" }, room: { type: "string" }, as: { type: "string" }, name: { type: "string" },
       generic: { type: "boolean" }, to: { type: "string" }, "reply-to": { type: "string" }, notify: { type: "boolean" },
@@ -69,17 +100,28 @@ export async function runCli(args: readonly string[]): Promise<number> {
       "window-seconds": { type: "string" }, "codex-bin": { type: "string" }, "agentchat-managed": { type: "string" },
     } });
     const command = p[0]; hook = command === "hook";
-    requireThat(p.length === (hook || command === "notify" || command === "launch" ? 2 : 1), "E_USAGE", "Unexpected positional arguments");
+    requireThat(p.length === (command === "room" ? p[1] === "create" || p[1] === "use" ? 3 : 2 : hook || command === "notify" || command === "launch" ? 2 : 1), "E_USAGE", "Unexpected positional arguments");
     const specific: Record<string, string[]> = {
-      join: ["name", "generic"], members: [], send: ["to", "reply-to", "notify", "id", "text", "stdin"],
+      join: ["name", "generic"], room: [], members: [], send: ["to", "reply-to", "notify", "id", "text", "stdin"],
       read: ["new", "after", "id", "mark", "limit"], install: ["apply", "auto-join", "no-auto-join", "budget", "window-seconds", "codex-bin"],
       uninstall: ["apply"], doctor: [], probe: ["to"], notify: ["to"], hook: ["agentchat-managed"], "channel-config": ["apply", "to"], "socket-config": ["apply", "to", "disable"], launch: ["to"],
     };
     const allowed = new Set(["project", "room", "as", "json", ...(specific[command ?? ""] ?? [])]);
     for (const key of Object.keys(v)) requireThat(allowed.has(key), "E_USAGE", `--${key} is not valid for ${command}`);
-    const project = discoverProject(v.project ?? process.cwd(), v.room);
+    const base = discoverProject(v.project ?? process.cwd());
+    requireThat(!v.room || !["room", "install", "uninstall", "hook"].includes(command ?? ""), "E_USAGE", "Project setup and room management do not take --room; use room use NAME");
+    const physical = command === "install" || command === "uninstall" || command === "hook" || command === "room" || command === "notify" && p[1] === "claude-channel";
+    const identity = command === "join" ? v.generic ? { runtime: "generic" as const, session: null } : identify() : physical ? undefined : optionalIdentity();
+    requireThat(!v.room || !physical, "E_USAGE", "Project hooks and the Channel follow session room selection; they do not accept --room");
+    const project = physical ? base : resolveRoom(base, v.room, identity);
     let result: unknown;
-    if (command === "install" || command === "uninstall") {
+    if (command === "room") {
+      requireThat(!v.as, "E_IDENTITY", "Room selection uses the current native session, not a supplied member profile");
+      if (p[1] === "create") result = createRoom(base, p[2]!);
+      else if (p[1] === "list" || p[1] === "current") result = listRooms(base, optionalIdentity());
+      else if (p[1] === "use") result = await joinProject(resolveRoom(base, p[2]!, identify()), identify());
+      else requireThat(false, "E_USAGE", "Use room create NAME, room list, room current or room use NAME");
+    } else if (command === "install" || command === "uninstall") {
       requireThat(!(v["auto-join"] && v["no-auto-join"]), "E_USAGE", "Choose auto-join or no-auto-join");
       const plan = await planInstall(project, { uninstall: command === "uninstall", autoJoin: v["no-auto-join"] ? false : v["auto-join"],
         budget: number(v.budget, "budget"), windowSeconds: number(v["window-seconds"], "window-seconds"), codexBin: v["codex-bin"] });
@@ -113,10 +155,7 @@ export async function runCli(args: readonly string[]): Promise<number> {
       requireThat(["join", "members", "send", "read", "notify", "probe", "channel-config", "socket-config"].includes(command ?? ""), "E_USAGE", "Unknown command; use --help");
       if (command === "join") {
         requireThat(!v.generic || v.name, "E_IDENTITY", "Generic shell enrollment requires an explicit name");
-        const identity = v.generic ? { runtime: "generic" as const, session: null } : identify();
-        store = new Store(project.room, { create: true });
-        const member = store.join(identity, v.name);
-        result = { ok: true, joined: true, project, member, members: store.members(), reception: receiver(project, member) };
+        result = await joinProject(project, identity!, v.name);
       } else {
         const writable = command === "send" || command === "probe" || command === "notify" || v.mark !== undefined;
         store = new Store(project.room, { readonly: !writable });
@@ -156,6 +195,7 @@ export async function runCli(args: readonly string[]): Promise<number> {
         }
       }
     }
+    if (!physical && result && typeof result === "object") result = { ...result, room_name: roomName(project) };
     console.log(JSON.stringify(result)); return 0;
   } catch (error) { console.error(JSON.stringify(errorResult(error))); return hook ? 1 : 2; }
   finally { store?.close(); }

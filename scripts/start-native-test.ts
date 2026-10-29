@@ -9,9 +9,10 @@ import { requireThat } from "../src/errors.ts";
 import { writeJson } from "../src/files.ts";
 import { notifyMember } from "../src/notify.ts";
 import { receiver } from "../src/runtime.ts";
+import { resolveRoom } from "../src/rooms.ts";
 
-const { values } = parseArgs({ options: { to: { type: "string" } } });
-const project = discoverProject(); const store = new Store(project.room);
+const { values } = parseArgs({ options: { to: { type: "string" }, room: { type: "string" } } });
+const project = resolveRoom(discoverProject(), values.room, identify()); const store = new Store(project.room);
 try {
   const from = store.actor(identify());
   requireThat(from.runtime === "codex", "E_IDENTITY", "Start this test inside the original Codex session");

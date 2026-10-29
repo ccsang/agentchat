@@ -12,6 +12,8 @@ import { tryLock } from "./lock.ts";
 import { notice } from "./notify.ts";
 import { Store } from "./store.ts";
 import { socketBinding } from "./socket-state.ts";
+import { baseProject, integrationDir } from "./project.ts";
+import { resolveRoom } from "./rooms.ts";
 
 export function databaseBusy(error: unknown): boolean {
   const code = (error as { code?: string })?.code;
@@ -22,6 +24,7 @@ interface ChannelOptions {
   now?: () => number; pollMs?: number; retryBaseMs?: number;
 }
 export async function runChannel(project: Project, options: ChannelOptions = {}): Promise<void> {
+  project = baseProject(project);
   const env = options.env ?? process.env, now = options.now ?? Date.now;
   const launch = readLaunch(project, env);
   if (launch.status === "bound") requireHostProcess(launch);
@@ -31,6 +34,7 @@ export async function runChannel(project: Project, options: ChannelOptions = {})
   });
   let closed = false, initialized = false;
   let member: Member | undefined, store: Store | undefined, release: (() => void) | null = null;
+  let activeProject = project, hostRelease: (() => void) | null = null;
   const token = randomUUID(), startedAt = now(), pollMs = options.pollMs ?? 1000;
   let retryCount = 0;
   server.oninitialized = () => { initialized = true; };
@@ -40,9 +44,17 @@ export async function runChannel(project: Project, options: ChannelOptions = {})
   options.signal?.addEventListener("abort", stop, { once: true });
   const heartbeat = (retry?: { reason: string; retryAt: number }) => {
     if (!member) return;
-    const previous = state(project, member);
-    saveState(project, { ...previous, session: member.session_ref!, active: true, memberId: member.id, error: undefined,
-      listener: { pid: process.pid, token, mode: "channel", launchId: launch.id, startedAt, expiresAt: now() + 30000, ...(retry ? { retry } : {}) } });
+    const previous = state(activeProject, member);
+    saveState(activeProject, { ...previous, session: member.session_ref!, active: true, memberId: member.id, error: undefined,
+      listener: { pid: process.pid, token, mode: "channel", routingVersion: 2, launchId: launch.id, startedAt, expiresAt: now() + 30000, ...(retry ? { retry } : {}) } });
+  };
+  const closeRoom = () => {
+    try {
+      if (member && release) {
+        const previous = state(activeProject, member);
+        if (previous?.listener?.token === token) saveState(activeProject, { ...previous, listener: undefined });
+      }
+    } finally { store?.close(); release?.(); store = undefined; member = undefined; release = null; }
   };
   try {
     await server.connect(options.transport ?? new StdioServerTransport());
@@ -54,35 +66,42 @@ export async function runChannel(project: Project, options: ChannelOptions = {})
         await Bun.sleep(Math.min(pollMs, 100)); continue;
       }
       requireHostProcess(binding);
+      if (!hostRelease) {
+        privateDirectory(join(integrationDir(project), "channels"));
+        hostRelease = tryLock(join(integrationDir(project), "channels", `${binding.session}.lock`));
+        requireThat(hostRelease, "E_BUSY", "This exact Claude session already has a Channel receiver");
+      }
       try {
-        store ??= new Store(project.room);
+        const selected = resolveRoom(project, undefined, { runtime: "claude", session: binding.session! });
+        if (selected.room !== activeProject.room) { closeRoom(); activeProject = selected; retryCount = 0; }
+        store ??= new Store(activeProject.room);
         if (!member) {
           member = store.actor({ runtime: "claude", session: binding.session! });
-          if (socketBinding(project, member)?.enabled) break;
-          privateDirectory(join(project.room, "listeners"));
-          release = tryLock(listenerLock(project, member));
+          if (socketBinding(activeProject, member)?.enabled) break;
+          privateDirectory(join(activeProject.room, "listeners"));
+          release = tryLock(listenerLock(activeProject, member));
           requireThat(release, "E_BUSY", "This exact Claude session already has a Channel receiver");
           heartbeat();
         }
         requireThat(member.session_ref === binding.session, "E_BINDING", "Channel binding changed native sessions");
-        const current = state(project, member);
-        if (socketBinding(project, member)?.enabled) break;
+        const current = state(activeProject, member);
+        if (socketBinding(activeProject, member)?.enabled) break;
         if (!current?.active) break;
         if (current.listener?.token !== token) throw new ChatError("E_BINDING", "Receiver ownership changed");
-        if (paused(project, member)) {
+        if (paused(activeProject, member)) {
           if (current.listener.expiresAt - now() < 15000) heartbeat();
           await Bun.sleep(pollMs); continue;
         }
-        const config = policy(project);
+        const config = policy(activeProject);
         const claim = store.claim(member.id, config.budget, now(), config.windowSeconds * 1000);
         retryCount = 0;
         if (current.listener.expiresAt - now() < 15000 || current.listener.retry) heartbeat();
         if (claim.batch) {
           try {
-            await server.notification({ method: "notifications/claude/channel", params: { content: notice(claim.batch, project), meta: { member_id: member.id } } });
+            await server.notification({ method: "notifications/claude/channel", params: { content: notice(claim.batch, activeProject), meta: { member_id: member.id } } });
           } catch {
             // A failed write may already have reached Claude; keep the reservation.
-            pause(project, member, "channel_outcome_unknown");
+            pause(activeProject, member, "channel_outcome_unknown");
           }
         }
         await Bun.sleep(pollMs);
@@ -95,19 +114,16 @@ export async function runChannel(project: Project, options: ChannelOptions = {})
     }
   } catch (error) {
     if (member && release) {
-      const previous = state(project, member);
-      if (previous?.listener?.token === token) saveState(project, { ...previous, error: { reason: (error as Error).message, at: now() } });
+      const previous = state(activeProject, member);
+      if (previous?.listener?.token === token) saveState(activeProject, { ...previous, error: { reason: (error as Error).message, at: now() } });
     }
     throw error;
   } finally {
     try {
-      if (member && release) {
-        const previous = state(project, member);
-        if (previous?.listener?.token === token) saveState(project, { ...previous, listener: undefined });
-      }
+      closeRoom();
     } finally {
       process.off("SIGINT", stop); process.off("SIGTERM", stop); options.signal?.removeEventListener("abort", stop);
-      try { await server.close(); } finally { store?.close(); release?.(); }
+      try { await server.close(); } finally { hostRelease?.(); }
     }
   }
 }

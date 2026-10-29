@@ -5,6 +5,7 @@ import { sessionId, UUID } from "./identity.ts";
 import { requireThat } from "./errors.ts";
 import { tryLock } from "./lock.ts";
 import type { Project } from "./types.ts";
+import { integrationDir } from "./project.ts";
 
 export interface LaunchBinding {
   id: string; token: string; project: string; room: string; createdAt: number;
@@ -15,13 +16,13 @@ export interface LaunchBinding {
 }
 export function bindingPath(project: Project, id: string): string {
   requireThat(UUID.test(id), "E_BINDING", "Invalid launch identifier");
-  return join(project.room, "launches", `${id}.json`);
+  return join(integrationDir(project), "launches", `${id}.json`);
 }
 function livePath(project: Project, id: string): string { return bindingPath(project, id) + ".live.lock"; }
 export function createLaunch(project: Project, expectedSession: string | null, hostVersion: string) {
   if (expectedSession) sessionId(expectedSession);
-  privateDirectory(join(project.room, "launches"));
-  const binding: LaunchBinding = { id: randomUUID(), token: randomUUID(), project: project.root, room: project.room,
+  privateDirectory(join(integrationDir(project), "launches"));
+  const binding: LaunchBinding = { id: randomUUID(), token: randomUUID(), project: project.root, room: integrationDir(project),
     createdAt: Date.now(), expectedSession, hostVersion, status: "pending" };
   const release = tryLock(livePath(project, binding.id));
   requireThat(release, "E_BUSY", "Cannot own this Claude launch");
@@ -56,7 +57,7 @@ export function readLaunch(project: Project, env: NodeJS.ProcessEnv, allowEnded 
   const id = env.AGENTCHAT_LAUNCH_ID, token = env.AGENTCHAT_LAUNCH_TOKEN;
   requireThat(id && token && UUID.test(id) && UUID.test(token), "E_BINDING", "Channel needs its own live AgentChat launch; use the prepared Claude launcher");
   const binding = readJson<LaunchBinding>(bindingPath(project, id));
-  requireThat(binding && binding.id === id && binding.token === token && binding.project === project.root && binding.room === project.room,
+  requireThat(binding && binding.id === id && binding.token === token && binding.project === project.root && binding.room === integrationDir(project),
     "E_BINDING", "Launch context belongs to another launch or project");
   const release = tryLock(livePath(project, id), false);
   if (release) { release(); requireThat(false, "E_BINDING", "Claude launcher is no longer running; old bindings cannot be reused"); }

@@ -10,10 +10,12 @@ import { bindingPath } from "./binding.ts";
 import type { LaunchBinding } from "./binding.ts";
 import { canonicalSocketPath, SOCKET_ADAPTER, validatePeer } from "./claude-peer.ts";
 import { saveSocketProof, socketBinding } from "./socket-state.ts";
+import { memberRoomSelected } from "./rooms.ts";
 
 interface Probe { id: string; nonce: string; memberId: string; session: string; hostVersion: string; adapter: string; createdAt: number; receiverToken?: string; launchId?: string }
 export async function startProbe(store: Store, project: Project, member: Member): Promise<Record<string, unknown>> {
   requireThat(member.session_ref, "E_IDENTITY", "A probe needs an exact native session");
+  requireThat(memberRoomSelected(project, member), "E_ROOM", "This native session selected another room; select this room before probing");
   const id = `probe-${randomUUID()}`, nonce = randomUUID();
   let hostVersion = "unknown";
   if (member.runtime === "codex") hostVersion = inspectCodex(policy(project).codexBin)?.version ?? "unknown";

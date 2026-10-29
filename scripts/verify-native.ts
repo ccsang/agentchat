@@ -6,9 +6,11 @@ import { readJson } from "../src/files.ts";
 import { Store } from "../src/store.ts";
 import { requireThat } from "../src/errors.ts";
 import type { Message } from "../src/types.ts";
+import { optionalIdentity } from "../src/identity.ts";
+import { resolveRoom } from "../src/rooms.ts";
 
-const { values } = parseArgs({ options: { evidence: { type: "string" } } });
-const project = discoverProject();
+const { values } = parseArgs({ options: { evidence: { type: "string" }, room: { type: "string" } } });
+const project = resolveRoom(discoverProject(), values.room, optionalIdentity());
 const path = values.evidence ?? readJson<{ evidencePath: string }>(join(project.room, "latest-native-test.json"))?.evidencePath;
 requireThat(path, "E_PROBE", "No native integration test has been started");
 const evidence = readJson<{ nonce: string; requestId: string; reverseId: string; fromId: string; toId: string }>(path);

@@ -6,12 +6,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { fixture, nativeIdentity, testEnv } from "./helpers.ts";
 import { Store } from "../src/store.ts";
 import * as peer from "../src/claude-peer.ts";
-import { configureSocket, socketBinding, socketProof } from "../src/socket-state.ts";
+import { configureSocket, saveSocketProof, socketBinding, socketProof } from "../src/socket-state.ts";
 import { dispatchSocket } from "../src/socket-adapter.ts";
 import { pause, paused, receiver, resume } from "../src/runtime.ts";
 import { recordProbeReply, startProbe } from "../src/probe.ts";
 import { writeJson } from "../src/files.ts";
 import { spawnSync } from "node:child_process";
+import { createRoom, roomProject, selectRoom } from "../src/rooms.ts";
 
 let f: ReturnType<typeof fixture>, store: Store, server: ReturnType<typeof createServer>, directory: string;
 let a: ReturnType<Store["join"]>, b: ReturnType<Store["join"]>, metaPath: string, socketPath: string, token: string;
@@ -43,6 +44,37 @@ test("socket selection previews without writes; explicit selection pins the exac
   expect(JSON.stringify(applied)).not.toContain(token); expect(readFileSync(join(f.project.room, "socket-bindings", `${b.id}.json`), "utf8")).not.toContain(token);
   expect(receiver(f.project, b).mode).toBe(peer.SOCKET_ADAPTER); expect(receiver(f.project, b).state).toBe("armed_unverified");
   expect(configureSocket(f.project, b, true).binding).toEqual(binding);
+});
+test("named rooms reuse the explicitly chosen native socket but require their own nonce proof", async () => {
+  configureSocket(f.project, b, true); const binding = socketBinding(f.project, b)!;
+  saveSocketProof(f.project, b, { nonce: "fixture-only", replyId: "fixture-only", verifiedAt: Date.now(), hostVersion: binding.version, adapter: peer.SOCKET_ADAPTER, receiverToken: binding.instance });
+  expect(receiver(f.project, b).verification).toBe("current_socket");
+  createRoom(f.project, "review"); const target = roomProject(f.project, "review"), other = new Store(target.room);
+  try {
+    const next = other.join({ runtime: b.runtime, session: b.session_ref }), sender = other.join({ runtime: a.runtime, session: a.session_ref });
+    selectRoom(target, { runtime: b.runtime, session: b.session_ref });
+    expect(socketBinding(target, next)?.instance).toBe(binding.instance);
+    expect(receiver(target, next).transport_alive).toBe(true); expect(receiver(target, next).verification).toBe("unverified");
+    other.send({ from: sender.id, to: next.id, id: "review-only", body: "fixture", notify: true });
+    expect((await dispatchSocket(other, target, next)).state).toBe("submitted");
+    await until(() => frames.length === 2);
+    expect(JSON.stringify(frames[1])).toContain("--room review read --new");
+    expect(receiver(f.project, b).state).toBe("room_not_selected");
+  } finally { other.close(); }
+});
+test("unknown native socket writes remain paused when the native session changes rooms", async () => {
+  configureSocket(f.project, b, true); pause(f.project, b, "socket_outcome_unknown", { adapter: peer.SOCKET_ADAPTER });
+  createRoom(f.project, "review"); const target = roomProject(f.project, "review"), other = new Store(target.room);
+  try {
+    const next = other.join({ runtime: b.runtime, session: b.session_ref }); selectRoom(target, { runtime: b.runtime, session: b.session_ref });
+    expect((await dispatchSocket(other, target, next)).state).toBe("paused"); expect(frames).toHaveLength(0);
+    resume(target, next); expect(paused(f.project, b)).toBeNull();
+  } finally { other.close(); }
+});
+test("a copied native socket binding cannot skip project validation using its saved cwd", () => {
+  configureSocket(f.project, b, true); const foreign = fixture(), other = new Store(foreign.project.room, { create: true });
+  try { const copied = other.join({ runtime: b.runtime, session: b.session_ref }); expect(() => peer.validatePeer(foreign.project, copied, socketBinding(f.project, b)!)).toThrow("another project"); }
+  finally { other.close(); foreign.cleanup(); }
 });
 test("native notification uses peer authentication and a one-way next-priority frame, with no child or permission-class impersonation", async () => {
   configureSocket(f.project, b, true);

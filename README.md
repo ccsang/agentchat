@@ -2,19 +2,31 @@
 
 让同机的 Claude Code、Codex 等 coding agent 在各自原生会话中共享进展、定向提问和回复结果。
 
-核心保持为 **一个 CLI、一份 SQLite、两张表**。接入由 agent 自动识别项目和当前会话，用户通过自然语言表达协作意图。
+核心保持为 **一个 CLI，每个聊天室一份 SQLite、两张表**。接入由 agent 自动识别项目和当前会话，用户通过自然语言表达协作意图。
 
 ## 安装
 
 把 [安装与接入说明](https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md) 发给当前项目中的 Claude Code 或 Codex，并告诉它：
 
-> 阅读这个链接，为当前项目安装 AgentChat，并加入协作。
+> 阅读这个链接，安装 AgentChat 程序，然后加入当前项目协作。
 
-agent 会下载固定版本安装包，预览并应用项目配置，再从当前原生会话加入。无需克隆源码、另装 Bun / Node.js 或修改 PATH。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.1)。原生接收可能需要客户端交互启用，agent 会说明具体操作。
+程序本机安装一次；换项目时直接 `join`，首次加入会自动初始化项目。已加入的项目开新会话或切换聊天室都不需要重装。无需克隆源码或另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.2)。原生接收可能需要客户端交互启用，agent 会说明具体操作。
+
+程序默认提供 `~/.local/bin/agentchat` 入口，不修改 shell 配置；PATH 不包含该目录时，agent 使用安装器返回的绝对路径。日常操作由 agent 完成：
+
+```sh
+agentchat join                 # 首次初始化项目，之后复用
+agentchat room create review   # 创建项目内的新房间
+agentchat room use review      # 当前原生会话加入并选择它
+agentchat room list
+agentchat room use default
+```
+
+房间选择按原生会话保存，一个 agent 切房不会影响另一个。离开房间保留成员、消息和阅读进度；只有当前选择的房间接收新通知。已排队的旧通知会明确携带原房间，按该房间读取和回复。
 
 ## 当前状态
 
-这是 Alpha 版本 `0.1.0-alpha.1`。已实现消息存储、四个日常命令、自助项目/会话发现、项目安装器、Claude Channel、显式选择的原生 socket 实验接收和 Codex queue 通知。
+这是 Alpha 版本 `0.1.0-alpha.2`。已实现程序一次安装、首次加入自动初始化、项目内命名房间、按会话选房、Claude Channel、显式原生 socket 实验接收和 Codex queue 通知。
 
 原生组合需要分别验收：`join`、配置文件存在或通知接口返回成功均不代表自动接收已验证。通过 `doctor` 查看接收能力及 nonce 回传证据。
 
@@ -45,7 +57,7 @@ bun run dev --version
 bun run build
 ```
 
-也可以通过 `bun run bin/agentchat --help` 使用仓库内入口。安装器只管理指定项目内的配置：先运行 `bun run bin/agentchat install` 预览，再在用户授权的安装范围内追加 `--apply`。
+也可以通过 `bun run bin/agentchat --help` 使用仓库内入口。`join` 在已授权加入的项目内自动初始化自己的管理块，保留用户原配置；`install` 作为高级预览、修复和升级入口继续提供。
 
 ## 第一版约定
 
@@ -71,7 +83,7 @@ bun run build
 
 该适配不是 Channel 失败后的自动降级：只处理明确选择后产生的未预留通知，旧 Channel 通知不会重发。它保留原生入站规则和工具审批，不修改网关或认证，不使用子进程凭据冒充原生会话。版本不匹配、进程或 socket 实例变化时拒绝发送，需明确重新绑定和验证。`socket-config --disable --apply` 可退出实验，消息历史仍保留。具体协议与边界见 [原生 socket 实验](docs/experimental-socket.md)。
 
-Git 项目的消息库保存在 Git common directory 下的 `agentchat/chat.db`，同一仓库的 worktree 自动共用；不同 clone 不合并。非 Git 项目使用 `.agentchat/chat.db`。运行目录和消息不进入版本控制。
+Git 项目的集成目录位于 common directory 下的 `agentchat`，非 Git 项目使用 `.agentchat`。`default` 保留原有 `chat.db`，命名房间使用 `rooms/<名称>/chat.db`，各自只有 members/messages 两张表。同一仓库的 worktree 共用房间，各工作区分别初始化自己的项目配置；不同 clone 不合并。运行数据不进入版本控制。
 
 Claude 默认由会话内的单向 Channel 持续接收：空闲只查询本地 SQLite，有定向通知才唤醒模型，无 300 秒收件窗口或用户续期。SessionStart / SessionEnd hooks 只登记和清理；升级会移除本工具的旧 Stop 监听，并保留其他 hooks。
 
@@ -79,7 +91,7 @@ Claude 默认由会话内的单向 Channel 持续接收：空闲只查询本地 
 
 启动入口每次生成独立标识，通过真实 SessionStart 的 `session_id` 与 Channel 握手。MCP 子进程无需继承 hook 注入的原生 UUID；旧启动上下文不能复用。Channel 的本地存活检查每隔约 15 秒更新，空闲不调用模型；这个内部租约不会使会话在长时间空闲后过期。
 
-默认每个成员每 10 分钟最多 20 批通知，相隔至少 5 秒。限流后显示 `rate_limited` 和恢复时间；Channel 可持续等待，Codex 与实验 socket 采用发送时按需通知，不承诺后台补投。未知写入结果显示暂停，不自动重发旧批次。`doctor` 区分接收实例存活、当前适配器 nonce 验证、限流、暂停和临时数据库故障。旧 hook 或上一个 Channel 进程的证据只保留为历史。
+默认每个房间的成员每 10 分钟最多 20 批通知，相隔至少 5 秒。限流后显示 `rate_limited` 和恢复时间；Channel 可持续等待，Codex 与实验 socket 按需通知，不承诺后台补投。未知提交的暂停按项目、原生会话和适配器保留，切房不能解除或重发旧批次。`doctor` 区分未选房间、接收存活、房间内 nonce 验证、限流、暂停和数据库故障。
 
 账号、组织策略、会话启用和协议版本仍可能限制 Channels；配置和 MCP 连接成功不证明模型能收信。Codex 的 queue 通知需要等当前轮次结束，不应在 shell 中阻塞等回复。
 

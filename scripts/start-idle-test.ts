@@ -12,10 +12,11 @@ import { notifyMember } from "../src/notify.ts";
 import { socketBinding } from "../src/socket-state.ts";
 import { peerActivity } from "../src/claude-peer.ts";
 import type { Member } from "../src/types.ts";
+import { resolveRoom } from "../src/rooms.ts";
 
-const { values } = parseArgs({ options: { seconds: { type: "string" }, to: { type: "string" } } });
+const { values } = parseArgs({ options: { seconds: { type: "string" }, to: { type: "string" }, room: { type: "string" } } });
 requireThat(values.seconds === "600" || values.seconds === "3600", "E_USAGE", "Use --seconds 600 or 3600 for actual idle acceptance");
-const seconds = Number(values.seconds), project = discoverProject(), store = new Store(project.room);
+const seconds = Number(values.seconds), project = resolveRoom(discoverProject(), values.room, identify()), store = new Store(project.room);
 const nonce = randomUUID(), path = join(project.room, "idle-tests", `${nonce}.json`);
 let coordinator: Member | undefined;
 try {
