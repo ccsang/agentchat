@@ -2,24 +2,34 @@
 
 ## 当前能力
 
-当前 Alpha `0.1.0-alpha.2` 将程序安装、项目初始化、聊天室管理分开。程序安装一次；每个项目首次 `join` 自动初始化；`room create/list/use` 管理项目内房间。安装包自带运行环境，不要求用户克隆工具源码或另装 Bun / Node.js。
+当前 Alpha `0.1.0-alpha.3` 将本地运行状态和项目文件集成分开。默认 `join` / `room use` 不修改 AGENTS.md、CLAUDE.md、hooks 或 Git exclude；Git 项目的状态写入 Git 元数据目录，非 Git 项目使用 .agentchat。安装包自带运行环境。
+
+先遵守用户本次范围：只安装程序就安装后停止；只建房间就 room create 后停止，不自动 join 或 room use。只有用户要求加入或切换房间才执行对应操作。长期写入项目指令、启用 hooks 都是独立的明确选择，不能从“安装工具”“建房”“加入”推断授权。
 
 首次接入按以下步骤由 agent 操作，用户无需复制 room 或 UUID：
 
-1. 先检查 `agentchat` 或默认 `$HOME/.local/bin/agentchat` 是否为支持 `room create/use` 的 AgentChat。已经安装时直接复用，换项目、开新会话、切房都不用重新下载安装器。支持 macOS、Linux（glibc）的 arm64 / x64；Windows 尚无安装包。
-2. 尚未安装或明确升级时，从 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.2/install.sh` 下载到 agent 临时目录，阅读后执行 `sh <安装器>`。只使用成功下载的 HTTPS 内容。它校验压缩包和程序，安装到版本缓存并提供全局命令，不初始化业务项目；不修改 shell 配置、网关或审批。不覆盖同名的无关用户程序。
-3. 读取返回的 `cli` 绝对路径，在用户要加入的业务项目目录执行 `"<cli>" join`，或传内部 `--project <业务项目绝对目录>`。首次加入会自动应用可备份、幂等的项目指令管理块、hooks 和启动入口，保留用户配置；以后新会话直接加入，不重复初始化。`install` 仍可用于显式预览、修复或升级项目入口，不是每次加入的前置步骤。
+1. 检查 `agentchat` 或默认 `$HOME/.local/bin/agentchat` 的 --version。安全的默认加入从 0.1.0-alpha.3 开始；Alpha 1/2 的 join 会改项目文件，必须先升级，不能把本文保证套用给旧二进制。也要检查旧项目 run 的版本；首次更新时使用全局新版 join 刷新本地入口，随后再用项目 run。支持 macOS/Linux（glibc）arm64/x64，Windows 尚无安装包。
+2. 尚未安装或明确升级时，从 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.3/install.sh` 下载到 agent 临时目录，阅读后执行 `sh <安装器>`。只使用成功下载的 HTTPS 内容。它校验压缩包和程序，提供全局命令，不初始化业务项目，不修改 shell 配置、网关或审批。用户只要求安装时，到此停止。
+3. 用户要求加入时，在业务项目目录执行新版 `"<cli>" join`，或传内部 --project 绝对目录。首次仅准备本地数据、run 和私有启动入口，不读取或修补项目指令、hooks 配置；已存在的旧集成也不自动删除。默认 install 是本地入口的显式预览/修复方式。版本、路径等参数由 agent 处理。
 4. 每个 agent 必须从自己的原生会话 `join`。Codex 从环境识别 thread；Claude 从 hook 环境或自身 socket 元数据识别准确会话。身份缺失时停止并报告，不替其他会话声明身份。查看返回的 members、initialization、reception；当前房间默认是 `default` 或该原生会话上次选择的房间。
-5. 默认 Channel：已打开的 Claude 在原会话运行 `"<cli>" channel-config --apply`，由工具准备准确恢复入口；其他 agent 可通过 `--to` 为确切已登记的 Claude 准备。提示用户退出原客户端，并在自己的终端执行这个入口，完成宿主的开发 Channel / MCP 确认。入口恢复同一会话，不能在 agent shell 中启动嵌套会话。用户明确选择原生 socket 实验时改按本文末节操作，不需要先恢复 Channel。
+5. 自动收信单独配置。用户明确选择 Channel 时，需要先明确启用可选 hooks（见下一节），然后在原 Claude 会话运行 channel-config --apply 准备准确恢复入口；可用 --to 为确切成员准备。由用户在自己的终端恢复同一会话并完成宿主 Channel/MCP 确认，不能在 agent shell 开嵌套业务会话。用户选择 socket 实验时按本文末节操作，支持的原生 socket 身份不依赖项目 hooks 或指令文件。
 6. 后续仍用准备好的启动入口。查看 join 返回的成员与 reception，使用 send/read 协作。`probe` 会产生真实通知，仅在用户授权的联调范围内使用。每个用户、原生会话和接收实例都需自己的回传证据；本仓库的验证记录不能证明别人的环境已接通。
 
 只有完成当前所选接收实例的 nonce 回传才能报告自动接收已验证。Channel 随原会话持续运行，空闲不调用模型、不发心跳消息，也不要求用户续期。socket 实验目前仅验收了 macOS arm64、Claude Code 2.1.312 / peerProtocol 1 的交互 CLI；其他原生组合不能仅凭安装成功报告支持。
 
 程序入口默认在 `~/.local/bin/agentchat`，项目入口仍会固定引用初始化时的版本缓存；不要删除仍被项目使用的缓存。源码用户 `bun install --frozen-lockfile --ignore-scripts` 后直接用 `bun run bin/agentchat --project <业务项目> join`。升级和卸载见 [分发说明](docs/distribution.md)。
 
+## 可选的长期项目集成
+
+只有用户明确要求在项目长期保留接入规则时，才使用 install --instructions 预览，再在授权范围内追加 --apply；它只管理 AGENTS.md / CLAUDE.md 的 AgentChat 块。这两个文件不参与普通消息存储和收发。
+
+用户明确要求启用 Claude Channel 的 hooks 时，独立使用 install --hooks 预览，再追加 --apply。它管理 .claude/settings.local.json 和本工具的 Git 本地忽略块，不会写 AGENTS.md / CLAUDE.md。settings.local.json 也可能已入库，必须按预览列出的文件范围处理；不能顺带打开 --instructions。
+
+移除也分别预览：uninstall --instructions 或 uninstall --hooks，明确需要时追加 --apply。部分移除保留本地收发能力和其他集成；uninstall --apply 则停用工作区运行状态并移除已启用的自有集成，仍保留消息。旧版已加载的 hooks/Channel 可能需要在原客户端重新加载或恢复；工具不会替用户关闭业务会话。
+
 ## 创建与选择聊天室
 
-用户需要新聊天室时，agent 执行 `room create <名称>`，再 `room use <名称>` 加入并选择。命名房间必须先创建；`join --room <名称>` 也可加入已有房间。`room list` / `room current` 只读，不初始化项目。名称使用 1–64 位小写字母、数字、下划线或短横线，由 agent 根据用户意图选择，不让用户搬运目录或 UUID。
+用户需要新聊天室时，agent 执行 `room create <名称>`；用户同时要求加入或切换时再执行 `room use <名称>`。命名房间必须先创建；`join --room <名称>` 也可加入已有房间。`room list` / `room current` 只读，不初始化项目。名称使用 1–64 位小写字母、数字、下划线或短横线，由 agent 根据用户意图选择，不让用户搬运目录或 UUID。
 
 选择按项目内的原生 runtime + session UUID 保存，普通终端没有原生身份时可创建和列出房间，切换应由 agent 在自己的原会话执行。一个会话只选择一个收信房间；其他房间的成员、消息和游标保留。`--room <名称>` 用于单次 read/send/mark，不改变默认选择。
 
@@ -44,7 +54,7 @@
 
 安装器预览、备份并幂等维护自己的配置块。用户无需搬运参数；需要宿主交互、额外授权或恢复会话时，明确说明具体操作及原因。不要把安装通信工具理解为可以替用户批准业务操作。
 
-Codex 优先直接调用绑定会话的 `codex queue`，不要求用户维持独立轮询桥。Claude 默认使用会话内的单向 Channel，hook 只负责登记和清理。启动标识通过真实 SessionStart 与 Channel 绑定；不能把 hook 写入的 shell 环境或旧 profile 当作 MCP 已绑定的证明。
+Codex 优先直接调用绑定会话的 codex queue。Claude Channel 需要明确启用可选 hooks 后再由宿主启用；hook 只登记和清理，项目指令并非前提。不能把 hook 环境或旧 profile 当作 MCP 已绑定的证明。通知自带本地 Tool argv 与房间信息，不要求业务项目存在 ONBOARDING.md、AGENTS.md 或 CLAUDE.md。
 
 接入结果只能根据证据报告：
 

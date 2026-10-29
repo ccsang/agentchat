@@ -10,12 +10,12 @@
 
 > 阅读这个链接，安装 AgentChat 程序，然后加入当前项目协作。
 
-程序本机安装一次；换项目时直接 `join`，首次加入会自动初始化项目。已加入的项目开新会话或切换聊天室都不需要重装。无需克隆源码或另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.2)。原生接收可能需要客户端交互启用，agent 会说明具体操作。
+程序本机安装一次；`join` 只准备本地运行状态、加入房间，不修改 `AGENTS.md`、`CLAUDE.md` 或 hooks 配置。换项目、开新会话、建房和切房都不需要重装。无需另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.3)。
 
 程序默认提供 `~/.local/bin/agentchat` 入口，不修改 shell 配置；PATH 不包含该目录时，agent 使用安装器返回的绝对路径。日常操作由 agent 完成：
 
 ```sh
-agentchat join                 # 首次初始化项目，之后复用
+agentchat join                 # 只准备本地运行状态，不改项目指令或 hooks
 agentchat room create review   # 创建项目内的新房间
 agentchat room use review      # 当前原生会话加入并选择它
 agentchat room list
@@ -24,9 +24,22 @@ agentchat room use default
 
 房间选择按原生会话保存，一个 agent 切房不会影响另一个。离开房间保留成员、消息和阅读进度；只有当前选择的房间接收新通知。已排队的旧通知会明确携带原房间，按该房间读取和回复。
 
+Git 项目的本地状态全部放在 Git 元数据目录内，默认加入后 `git status` 保持不变。非 Git 项目使用 `.agentchat`。长期项目集成是两个独立的可选项，只有用户明确要求时才启用：
+
+```sh
+agentchat install --instructions         # 预览 AGENTS.md / CLAUDE.md 的自有管理块
+agentchat install --instructions --apply # 明确启用项目指令
+agentchat install --hooks                # 单独预览 Claude hooks
+agentchat install --hooks --apply        # 明确启用 hooks，不写项目指令
+```
+
+只要求安装程序或创建房间时，完成后停止，不自动加入、切房或启用集成。默认加入支持主动收发；Codex 使用原生 queue，Claude 的 Channel 需要明确启用 hooks 并完成宿主启用，或由用户选择已验证版本的 socket 实验。通知自带本地 CLI 路由，不依赖项目指令文件。
+
+以上默认行为从 `0.1.0-alpha.3` 开始。Alpha 1/2 用户需先升级全局程序，再用新版 `join` 更新本地入口；旧管理块和 hooks 不会被默认加入自动修补或删除。需要清理旧管理块时，显式预览 `uninstall --instructions`，确认范围后追加 `--apply`；hooks 可用 `uninstall --hooks` 单独移除。
+
 ## 当前状态
 
-这是 Alpha 版本 `0.1.0-alpha.2`。已实现程序一次安装、首次加入自动初始化、项目内命名房间、按会话选房、Claude Channel、显式原生 socket 实验接收和 Codex queue 通知。
+这是 Alpha 版本 `0.1.0-alpha.3`。已实现程序一次安装、加入仅写本地状态、可选项目指令和 hooks、项目内命名房间、按会话选房、Claude Channel、显式原生 socket 实验接收和 Codex queue 通知。
 
 原生组合需要分别验收：`join`、配置文件存在或通知接口返回成功均不代表自动接收已验证。通过 `doctor` 查看接收能力及 nonce 回传证据。
 
@@ -57,7 +70,7 @@ bun run dev --version
 bun run build
 ```
 
-也可以通过 `bun run bin/agentchat --help` 使用仓库内入口。`join` 在已授权加入的项目内自动初始化自己的管理块，保留用户原配置；`install` 作为高级预览、修复和升级入口继续提供。
+也可以通过 `bun run bin/agentchat --help` 使用仓库内入口。默认 `join` 和 `install` 仅准备本地运行状态；只有明确提供 `--instructions` / `--hooks` 才处理对应的项目文件，预览和应用均按相同范围执行。
 
 ## 第一版约定
 
@@ -83,9 +96,9 @@ bun run build
 
 该适配不是 Channel 失败后的自动降级：只处理明确选择后产生的未预留通知，旧 Channel 通知不会重发。它保留原生入站规则和工具审批，不修改网关或认证，不使用子进程凭据冒充原生会话。版本不匹配、进程或 socket 实例变化时拒绝发送，需明确重新绑定和验证。`socket-config --disable --apply` 可退出实验，消息历史仍保留。具体协议与边界见 [原生 socket 实验](docs/experimental-socket.md)。
 
-Git 项目的集成目录位于 common directory 下的 `agentchat`，非 Git 项目使用 `.agentchat`。`default` 保留原有 `chat.db`，命名房间使用 `rooms/<名称>/chat.db`，各自只有 members/messages 两张表。同一仓库的 worktree 共用房间，各工作区分别初始化自己的项目配置；不同 clone 不合并。运行数据不进入版本控制。
+Git 项目的集成目录位于 common directory 下的 `agentchat`，非 Git 项目使用 `.agentchat`。`default` 保留原有 `chat.db`，命名房间使用 `rooms/<名称>/chat.db`，各自只有 members/messages 两张表。同一仓库的 worktree 共用房间，各工作区分别准备本地状态并记录可选集成；不同 clone 不合并。Git 项目的运行数据不进入版本控制。
 
-Claude 默认由会话内的单向 Channel 持续接收：空闲只查询本地 SQLite，有定向通知才唤醒模型，无 300 秒收件窗口或用户续期。SessionStart / SessionEnd hooks 只登记和清理；升级会移除本工具的旧 Stop 监听，并保留其他 hooks。
+明确启用 hooks 和宿主功能后，Claude 可通过会话内的单向 Channel 持续接收：空闲只查询本地 SQLite，有定向通知才唤醒模型，无 300 秒收件窗口或用户续期。SessionStart / SessionEnd 只登记和清理；显式管理 hooks 时会移除本工具的旧 Stop 监听，并保留其他 hooks。普通加入不会读写这些配置。
 
 安装器提供私有 `run` 入口。安装包固定使用版本缓存中的独立程序；源码安装固定使用安装时的 Bun，均不依赖调用方 PATH。`channel-config --apply` 由原 Claude agent 准备准确恢复入口；Codex 也可对已登记的确切 Claude 成员使用 `--to` 准备入口。用户退出原客户端后执行它，由宿主恢复同一会话并完成开发 Channel / MCP 的交互确认。以后仍从准备好的入口启动；预览阶段不能承诺宿主只确认一次。默认 `claude.command` 用于用户主动开始新的协作会话。工具不会后台另开业务会话。
 

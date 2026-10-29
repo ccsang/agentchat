@@ -12,6 +12,7 @@ import { runChannel } from "../src/channel.ts";
 import { paused, receiver, resume, state } from "../src/runtime.ts";
 import { writeJson } from "../src/files.ts";
 import { createRoom, roomProject, selectRoom } from "../src/rooms.ts";
+import { applyInstall, planInstall } from "../src/install.ts";
 
 async function until(check: () => boolean, ms = 4000) {
   const end = Date.now() + ms;
@@ -41,11 +42,24 @@ test("Channel emits IDs after initialization, without tools, permission relay or
     h.store.send({ from: h.a.id, to: h.b.id, notify: true, id: "mcp-message", body: "UNTRUSTED BODY MUST STAY IN SQLITE", now: h.now() });
     await until(() => h.events.length === 1);
     expect(h.events[0]!.content).toContain("mcp-message"); expect(h.events[0]!.content).not.toContain("UNTRUSTED BODY");
+    expect(h.events[0]!.content).toContain("Tool argv (local routing metadata)");
+    expect(h.events[0]!.content).toContain("No project instruction file is required");
     const capabilities = h.client.getServerCapabilities();
     expect(capabilities?.tools).toBeUndefined(); expect(capabilities?.experimental?.["claude/channel"]).toEqual({});
     expect(capabilities?.experimental?.["claude/channel/permission"]).toBeUndefined();
     expect(h.store.member(h.b.id).read_seq).toBe(0);
     expect(h.store.claim(h.b.id, 20, h.now() + 6000).batch).toBeNull();
+  } finally { await h.close(); }
+});
+test("disabling opt-in hooks stops the current Channel without deleting stored messages", async () => {
+  const h = await setup();
+  try {
+    applyInstall(await planInstall(h.project, { hooks: true }));
+    h.store.send({ from: h.a.id, to: h.b.id, id: "before-hook-removal", body: "persistent", notify: true, now: h.now() });
+    await until(() => h.events.length === 1);
+    applyInstall(await planInstall(h.project, { uninstall: true, hooks: true }));
+    expect(await h.task).toBeNull(); expect(state(h.project, h.b)?.listener).toBeUndefined();
+    expect(h.store.message("before-hook-removal").body).toBe("persistent");
   } finally { await h.close(); }
 });
 test("one native Channel follows session room selection and preserves both rooms' reservations", async () => {

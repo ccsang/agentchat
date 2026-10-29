@@ -22,7 +22,7 @@ const HELP = `AgentChat ${version}
 Local project chat for coding agents. Output is JSON unless --help/--version is used.
 
 Daily commands (project and native identity are discovered automatically):
-  join [--room NAME] [--name NAME]    Initialize this project on first join; join/select a room.
+  join [--room NAME] [--name NAME]    Join/select a room; prepare local state without changing project files.
   room create NAME                   Create a room without reinstalling the program or project.
   room list | current                Inspect rooms without changing selection.
   room use NAME                      Join/select an existing room for this native session only.
@@ -32,9 +32,9 @@ Daily commands (project and native identity are discovered automatically):
   read [--new | --after SEQ | --id ID | --mark SEQ] [--limit 20]
 
 Setup / diagnostics:
-  install [--apply] [--auto-join | --no-auto-join] [--budget N] [--window-seconds N] [--codex-bin PATH]
-                                     Advanced project repair/upgrade; ordinary join initializes it.
-  uninstall [--apply]                 Remove only owned config; keep history.
+  install [--instructions] [--hooks] [--apply] [--auto-join | --no-auto-join] [--budget N] [--window-seconds N] [--codex-bin PATH]
+                                     Default: local runtime only. Optional flags explicitly enable project integration.
+  uninstall [--instructions] [--hooks] [--apply]  Remove selected integration, or disable all; keep history.
   doctor                             Report current identity and receiver evidence.
   probe [--to NAME|ID]                Native nonce probe; may use model quota.
   notify resume [--to NAME|ID]        Resume future notifications, never reset old attempts.
@@ -96,15 +96,15 @@ export async function runCli(args: readonly string[]): Promise<number> {
       generic: { type: "boolean" }, to: { type: "string" }, "reply-to": { type: "string" }, notify: { type: "boolean" },
       id: { type: "string" }, text: { type: "string" }, stdin: { type: "boolean" }, new: { type: "boolean" },
       after: { type: "string" }, limit: { type: "string" }, mark: { type: "string" }, json: { type: "boolean" },
-      apply: { type: "boolean" }, disable: { type: "boolean" }, "auto-join": { type: "boolean" }, "no-auto-join": { type: "boolean" }, budget: { type: "string" },
+      apply: { type: "boolean" }, instructions: { type: "boolean" }, hooks: { type: "boolean" }, disable: { type: "boolean" }, "auto-join": { type: "boolean" }, "no-auto-join": { type: "boolean" }, budget: { type: "string" },
       "window-seconds": { type: "string" }, "codex-bin": { type: "string" }, "agentchat-managed": { type: "string" },
     } });
     const command = p[0]; hook = command === "hook";
     requireThat(p.length === (command === "room" ? p[1] === "create" || p[1] === "use" ? 3 : 2 : hook || command === "notify" || command === "launch" ? 2 : 1), "E_USAGE", "Unexpected positional arguments");
     const specific: Record<string, string[]> = {
       join: ["name", "generic"], room: [], members: [], send: ["to", "reply-to", "notify", "id", "text", "stdin"],
-      read: ["new", "after", "id", "mark", "limit"], install: ["apply", "auto-join", "no-auto-join", "budget", "window-seconds", "codex-bin"],
-      uninstall: ["apply"], doctor: [], probe: ["to"], notify: ["to"], hook: ["agentchat-managed"], "channel-config": ["apply", "to"], "socket-config": ["apply", "to", "disable"], launch: ["to"],
+      read: ["new", "after", "id", "mark", "limit"], install: ["apply", "instructions", "hooks", "auto-join", "no-auto-join", "budget", "window-seconds", "codex-bin"],
+      uninstall: ["apply", "instructions", "hooks"], doctor: [], probe: ["to"], notify: ["to"], hook: ["agentchat-managed"], "channel-config": ["apply", "to"], "socket-config": ["apply", "to", "disable"], launch: ["to"],
     };
     const allowed = new Set(["project", "room", "as", "json", ...(specific[command ?? ""] ?? [])]);
     for (const key of Object.keys(v)) requireThat(allowed.has(key), "E_USAGE", `--${key} is not valid for ${command}`);
@@ -123,7 +123,7 @@ export async function runCli(args: readonly string[]): Promise<number> {
       else requireThat(false, "E_USAGE", "Use room create NAME, room list, room current or room use NAME");
     } else if (command === "install" || command === "uninstall") {
       requireThat(!(v["auto-join"] && v["no-auto-join"]), "E_USAGE", "Choose auto-join or no-auto-join");
-      const plan = await planInstall(project, { uninstall: command === "uninstall", autoJoin: v["no-auto-join"] ? false : v["auto-join"],
+      const plan = await planInstall(project, { uninstall: command === "uninstall", instructions: v.instructions, hooks: v.hooks, autoJoin: v["no-auto-join"] ? false : v["auto-join"],
         budget: number(v.budget, "budget"), windowSeconds: number(v["window-seconds"], "window-seconds"), codexBin: v["codex-bin"] });
       result = v.apply ? applyInstall(plan) : preview(plan);
     } else if (command === "launch") {

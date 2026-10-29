@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { cli, fixture, git, testEnv } from "./helpers.ts";
@@ -15,6 +15,8 @@ beforeEach(() => { f = fixture(); }); afterEach(() => f.cleanup());
 const identity = () => testEnv({ CODEX_THREAD_ID: randomUUID() });
 test("first join initializes a project once and later sessions preserve configuration and history", () => {
   writeFileSync(join(f.root, "AGENTS.md"), "User instructions\n");
+  writeFileSync(join(f.root, "CLAUDE.md"), "Existing Claude instructions\n");
+  mkdirSync(join(f.root, ".claude")); writeFileSync(join(f.root, ".claude/settings.local.json"), "Not JSON; join must not read or repair this file\n");
   const a = identity(), b = identity();
   const first = cli(f.root, ["join"], a);
   expect(first.status).toBe(0); expect(first.data.initialization.initialized).toBe(true);
@@ -55,7 +57,7 @@ test("a new project can join a pre-created named room without creating an unused
   const result = cli(f.root, ["join", "--room", "review"], identity());
   expect(result.status).toBe(0); expect(result.data.initialization.initialized).toBe(true);
   expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
-  expect(existsSync(join(f.root, ".claude/settings.local.json"))).toBe(true);
+  expect(existsSync(join(f.root, ".claude/settings.local.json"))).toBe(false);
 });
 test("unknown rooms, traversal names and foreign absolute paths fail before project initialization", () => {
   const env = identity();
@@ -68,7 +70,7 @@ test("room lookup refuses directory symlinks rather than reading another room's 
   symlinkSync(roomProject(f.project, "real").room, join(f.project.room, "rooms", "alias"));
   expect(cli(f.root, ["join", "--room", "alias"], identity()).data.error.code).toBe("E_PERMISSIONS");
 });
-test("worktrees share named rooms but initialize their own project configuration once", () => {
+test("worktrees share named rooms but prepare their own local runtime once", () => {
   git(f.root, ["init", "-b", "main"]);
   git(f.root, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "fixture"]);
   const linked = join(f.root, "linked"); git(f.root, ["worktree", "add", "-b", "linked", linked]);
@@ -76,7 +78,7 @@ test("worktrees share named rooms but initialize their own project configuration
   cli(f.root, ["join"], a); cli(f.root, ["room", "create", "review"]);
   const result = cli(linked, ["join", "--room", "review"], b);
   expect(result.status).toBe(0); expect(result.data.initialization.initialized).toBe(true);
-  expect(existsSync(join(linked, ".claude/settings.local.json"))).toBe(true);
+  expect(existsSync(join(linked, ".claude/settings.local.json"))).toBe(false);
   expect(cli(linked, ["join"], b).data.initialization.initialized).toBe(false);
   expect(cli(f.root, ["room", "list"], a).data.rooms).toHaveLength(2);
 });

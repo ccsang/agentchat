@@ -14,6 +14,7 @@ import { Store } from "./store.ts";
 import { socketBinding } from "./socket-state.ts";
 import { baseProject, integrationDir } from "./project.ts";
 import { resolveRoom } from "./rooms.ts";
+import { installation, integrationSettings } from "./workspace.ts";
 
 export function databaseBusy(error: unknown): boolean {
   const code = (error as { code?: string })?.code;
@@ -58,7 +59,7 @@ export async function runChannel(project: Project, options: ChannelOptions = {})
   };
   try {
     await server.connect(options.transport ?? new StdioServerTransport());
-    while (!closed && !options.signal?.aborted && !uninstalled(project)) {
+    while (!closed && !options.signal?.aborted && !uninstalled(project) && (!installation(project) || integrationSettings(project).hooks)) {
       const binding = readLaunch(project, env, true);
       if (binding.status === "ended") break;
       if (!initialized || binding.status !== "bound") {

@@ -9,7 +9,7 @@ import { Store } from "./store.ts";
 import { SOCKET_ADAPTER, validatePeer } from "./claude-peer.ts";
 import { socketBinding, socketProof } from "./socket-state.ts";
 import { integrationDir } from "./project.ts";
-import { installation } from "./workspace.ts";
+import { installation, integrationSettings } from "./workspace.ts";
 import { legacyMember, memberRoomSelected, resolveRoom, roomName } from "./rooms.ts";
 import { sessionId } from "./identity.ts";
 
@@ -77,12 +77,15 @@ export function receiver(project: Project, member: Member, now = Date.now()): Re
   const verified = native?.enabled ? currentProof?.adapter === SOCKET_ADAPTER && currentProof.receiverToken === native.instance :
     value?.proof?.adapter === "claude-channel" && value.proof.receiverToken === value.listener?.token && value.proof.launchId === value.listener?.launchId;
   const retrying = databaseError || (!native?.enabled && !!value?.listener?.retry);
+  const inactiveReason = !native?.enabled && !integrationSettings(project).hooks
+    ? "Join prepared local state only. Channel needs explicitly enabled hooks (install --hooks); project instructions are optional and independent"
+    : "Use the prepared Claude launcher to enable this session's Channel; no periodic user message is needed";
   return {
     mode, experimental: !!native?.enabled, state: stopped?.kind === "host_blocked" ? "blocked" : !alive ? switching ? stopped ? "paused" : "switching_room" : "inactive" : stopped ? "paused" : retrying ? "degraded" : limitReason !== "ready" ? "rate_limited" : verified ? "verified" : "armed_unverified",
     transport_alive: alive, verification: verified && alive ? native?.enabled ? "current_socket" : "current_channel" : "unverified", manual_read_available: true,
     receiver_instance: native?.enabled ? native.instance : value?.listener?.token ?? null,
     lease_expires_at: alive && !native?.enabled ? value?.listener?.expiresAt : null,
-    reason: !alive ? switching ? stopped?.reason ?? "The Channel process is present; waiting for its selected-room binding or database. Check doctor again; do not reinstall or start another client" : nativeError ?? stopped?.reason ?? value?.error?.reason ?? "Use the prepared Claude launcher to enable this session's Channel; no periodic user message is needed" :
+    reason: !alive ? switching ? stopped?.reason ?? "The Channel process is present; waiting for its selected-room binding or database. Check doctor again; do not reinstall or start another client" : nativeError ?? stopped?.reason ?? value?.error?.reason ?? inactiveReason :
       stopped?.reason ?? (retrying ? "Database temporarily unavailable" : limitReason !== "ready" ? limitReason : verified ? "This exact receiver instance returned its nonce; future message processing still requires its own reply" : native?.enabled ? "Native inbox is present; socket submission and model processing require separate evidence" : "Channel connected; nonce evidence is required separately"),
     limits: limit, retry_at: !native?.enabled ? value?.listener?.retry?.retryAt ?? null : null, host_diagnostic: stopped?.kind === "host_blocked" ? stopped : null,
     evidence: verified && alive ? currentProof : null, historical_evidence: value?.proof ?? null,

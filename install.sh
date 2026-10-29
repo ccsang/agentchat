@@ -2,7 +2,7 @@
 set -eu
 umask 077
 
-AGENTCHAT_VERSION="v0.1.0-alpha.2"
+AGENTCHAT_VERSION="v0.1.0-alpha.3"
 release="https://github.com/ccsang/agentchat/releases/download/$AGENTCHAT_VERSION"
 project=""
 apply=0
@@ -20,7 +20,7 @@ while [ "$#" -gt 0 ]; do
       printf '%s\n' "AgentChat $AGENTCHAT_VERSION installer" \
         'Usage: sh install.sh' \
         'Downloads and verifies the standalone CLI; no Bun or Node.js installation is needed.' \
-        'Installs the program once; run agentchat join inside each project to initialize it.' \
+        'Installs the program once; join prepares local state without changing instructions or hooks.' \
         'AGENTCHAT_INSTALL_DIR overrides the cache; AGENTCHAT_BIN_DIR overrides the command directory.' \
         'Legacy explicit project preview/repair: --project DIR [--apply].'
       exit 0 ;;

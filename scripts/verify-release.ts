@@ -38,6 +38,11 @@ try {
   assert(preview.applied === false && !existsSync(join(project, ".agentchat")), "Preview mutated the project");
   const first = JSON.parse(run(globalCli, ["--project", project, "join", "--generic", "--name", "release-alice"]));
   assert(first.initialization.initialized, "First join did not initialize its project");
+  assert(first.initialization.runtime_only && first.initialization.project_file_changes.length === 0, "First join requested project integration");
+  assert(readFileSync(join(project, "AGENTS.md"), "utf8") === "Existing project instructions\n" && !existsSync(join(project, "CLAUDE.md")) && !existsSync(join(project, ".claude")), "Default join changed project instruction or hook files");
+  const optional = invoke(["install", "--instructions", "--hooks"]);
+  assert(optional.project_file_changes.length === 3 && !optional.applied && !existsSync(join(project, ".claude")), "Optional integration preview wrote project files");
+  assert(invoke(["install", "--instructions", "--hooks", "--apply"]).applied, "Explicit integration failed");
   const userFiles = ["AGENTS.md", "CLAUDE.md", ".claude/settings.local.json"].map(path => readFileSync(join(project, path), "utf8"));
   const programTime = statSync(program).mtimeMs;
   const room = join(project, ".agentchat"), entry = join(room, "run");
@@ -79,6 +84,6 @@ try {
   assert(readFileSync(join(project, "AGENTS.md"), "utf8") === "Existing project instructions\n", "Uninstall removed user instructions");
   assert(existsSync(join(room, "chat.db")), "Uninstall deleted history");
   console.log(JSON.stringify({ ok: true, version, platform: process.platform, arch: process.arch,
-    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "program_setup_once", "preserve_unrelated_command", "preview", "first_join_initializes", "later_join_preserves_project", "named_rooms_without_reinstall", "idempotency", "hooks", "launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
+    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "program_setup_once", "preserve_unrelated_command", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "idempotency", "hooks", "launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
     native_reception_verified: false }));
 } finally { rmSync(root, { recursive: true, force: true }); }
