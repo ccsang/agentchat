@@ -97,7 +97,8 @@ test("kernel file locks exclude a second owner and release without deleting the 
 test("four processes append 200 unique messages without loss", async () => {
   const store = new Store(f.project.room, { create: true }); const member = store.join(nativeIdentity()); store.close();
   const children = Array.from({ length: 4 }, (_, i) => Bun.spawn([process.execPath, join(import.meta.dir, "fixtures/worker.ts"), "write", f.project.room, member.id, `writer${i}`, "50"], { env: testEnv(), stdout: "pipe", stderr: "pipe" }));
-  expect(await Promise.all(children.map(c => c.exited))).toEqual([0, 0, 0, 0]);
+  const results = await Promise.all(children.map(async child => ({ exit: await child.exited, stderr: await new Response(child.stderr).text() })));
+  expect(results).toEqual(Array.from({ length: 4 }, () => ({ exit: 0, stderr: "" })));
   const reopened = new Store(f.project.room, { readonly: true });
   expect(reopened.db.query("SELECT count(*) n,count(DISTINCT id) ids FROM messages").get()).toEqual({ n: 200, ids: 200 }); reopened.close();
 });

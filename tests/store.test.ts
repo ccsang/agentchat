@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, readFileSync, statSync, symlinkSync } from "node:fs";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { chmodSync, existsSync, readFileSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Store } from "../src/store.ts";
 import { fixture, nativeIdentity } from "./helpers.ts";
 import type { Member } from "../src/types.ts";
+import * as files from "../src/files.ts";
 
 let f: ReturnType<typeof fixture>, store: Store, a: Member, b: Member;
 beforeEach(() => { f = fixture(); store = new Store(f.project.room, { create: true }); a = store.join(nativeIdentity(), "alice"); b = store.join(nativeIdentity("claude"), "bob"); });
@@ -12,6 +13,26 @@ afterEach(() => { store.close(); f.cleanup(); });
 test("exactly two application tables and rollback journal", () => {
   expect(store.db.query("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all()).toEqual([{ name: "members" }, { name: "messages" }]);
   expect(store.db.query("PRAGMA journal_mode").get()).toEqual({ journal_mode: "delete" });
+});
+test("opening a room tolerates a completed writer removing its transient journal during the permission check", () => {
+  const journal = join(f.project.room, "chat.db-journal"), original = files.regularFile;
+  writeFileSync(journal, "", { mode: 0o600 });
+  const mock = spyOn(files, "regularFile").mockImplementation((path, ...args) => {
+    if (path === journal) unlinkSync(path);
+    return original(path, ...args);
+  });
+  try {
+    const opened = new Store(f.project.room);
+    try { expect(opened.members()).toHaveLength(2); } finally { opened.close(); }
+  } finally { mock.mockRestore(); }
+});
+test("transient SQLite sidecars still reject permission failures and dangling symlinks", () => {
+  const target = join(f.root, "sidecar"), sidecar = join(f.project.room, "chat.db-journal");
+  writeFileSync(sidecar, "", { mode: 0o600 }); chmodSync(sidecar, 0o644);
+  expect(() => new Store(f.project.room)).toThrow("owner-only"); unlinkSync(sidecar);
+  writeFileSync(target, "", { mode: 0o600 }); symlinkSync(target, sidecar);
+  expect(() => new Store(f.project.room)).toThrow("non-regular");
+  unlinkSync(target); expect(() => new Store(f.project.room)).toThrow("non-regular");
 });
 test("join is idempotent by native session; explicit rename preserves ID", () => {
   const again = store.join({ runtime: a.runtime, session: a.session_ref }); expect(again.id).toBe(a.id); expect(again.name).toBe("alice");

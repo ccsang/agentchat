@@ -1,6 +1,6 @@
 # AgentChat Lite v0.1 设计基线
 
-当前实现以最后的 Alpha 5 修订为准：Claude 插件自动加载生命周期 hooks，原生 socket 为唯一 Claude 接收路径，Channel 章节仅作历史设计。
+当前实现以最后的 Alpha 6 修订为准：Claude 插件自动加载生命周期 hooks，原生 socket 为唯一 Claude 接收路径，Channel 章节仅作历史设计。
 
 本设计归纳自“设计本地通信方案”对话。以“agent 自助接入”和“Claude 持续接收”的修订覆盖此前手动接入及限时 hook 接收步骤；重型 AgentBus 方案和要求用户维持 Codex 轮询桥的版本不作为实现基线。
 
@@ -256,3 +256,7 @@ join 自动尝试准确原生 socket 绑定，不要求项目 hooks 或指令文
 旧消息、阅读游标、通知预留及 unknown 暂停保留。旧 Channel unknown 不因新默认适配而清除或换路重发；当前 socket 证明仍按准确实例/房间保存。保留旧 claude-socket-experimental 标识及历史证明，避免将配置迁移误报成新端到端验证。历史真实空闲验收范围不外推到新用户或新 hook 机制。
 
 项目级 install --hooks 仅保留手动兼容选项，插件用户不必使用；uninstall --hooks 只移除项目副本，宿主插件 hooks 由宿主管理。no-auto-join 停止未来登记，socket disable 停止当前绑定，uninstall 停用本工作区；均保留历史。
+
+## 16. 并发打开 SQLite 的临时文件检查（Alpha 6）
+
+Alpha 5 标签的 Linux arm64 并发写入检查出现一个子进程退出，原测试未输出其 stderr，未发布安装包。后续在旧实现确定性复现：existsSync 后、regularFile 的 lstat 前，另一个写入者可能完成提交并删除 journal，造成 ENOENT。Alpha 6 直接检查 sidecar，仅容忍其正常不存在；权限失败、常规/悬空符号链接继续拒绝。SQLite 自身处理事务锁，不扩大重试、重做消息或修改表结构。并发测试输出失败子进程 stderr，避免隐藏诊断。Alpha 5 标签保留，当前对外版本为 Alpha 6。

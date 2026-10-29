@@ -1,6 +1,13 @@
 # 实施顺序与验收
 
 
+## Alpha 6：修复并发打开数据库的日志检查竞态
+
+- [x] Alpha 5 发布检查失败后保留原标签，不发布失败的安装包。
+- [x] 确定性复现 journal 在文件检查期间消失，以及悬空 sidecar 链接被跳过的问题。
+- [x] 只容忍 SQLite 临时文件缺失，保留权限与符号链接拒绝，并输出并发子进程错误。
+- [x] 新预发布版本交付 Alpha 5 功能及该修复；127 项测试和独立程序验收。
+
 ## Alpha 5：自动加载插件 hooks，移除 Channel
 
 - [x] Claude 插件声明 SessionStart/SessionEnd，sh 包装脚本自动定位 CLI、转发原生 stdin；Codex 不加载此 hooks 文件。

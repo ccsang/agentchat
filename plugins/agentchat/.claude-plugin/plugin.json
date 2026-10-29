@@ -1,6 +1,6 @@
 {
   "name": "agentchat",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "description": "Discover AgentChat and load collaboration instructions from the selected local CLI.",
   "author": {
     "name": "ccsang"

@@ -45,7 +45,13 @@ export class Store {
     if (options.create) { privateDirectory(room); createPrivateFile(path); }
     requireThat(existsSync(path), "E_ROOM", "Room not found; join this project first");
     privateDirectory(room); regularFile(path);
-    for (const suffix of ["-journal", "-wal", "-shm"]) if (existsSync(path + suffix)) regularFile(path + suffix);
+    for (const suffix of ["-journal", "-wal", "-shm"]) {
+      try { regularFile(path + suffix); }
+      catch (error) {
+        // Another writer may commit and remove a transient sidecar during this check.
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
     this.db = new Database(path, { readonly: options.readonly ?? false, create: false, strict: true });
     try {
       this.db.exec("PRAGMA busy_timeout=3000; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;");

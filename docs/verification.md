@@ -2,6 +2,14 @@
 
 日期：2026-10-28。开发环境：macOS arm64、Bun 1.3.14。
 
+## Alpha 6：并发打开 SQLite 修复（2026-10-29）
+
+Alpha 5 的 PR 四平台检查和 main 检查通过，但标签构建的 Linux arm64 并发写入测试有一个进程退出，发布因此跳过；没有重试到通过或覆盖标签。该旧测试未输出子进程 stderr，无法从日志确认那次退出的具体异常。
+
+后续确定性回归在旧实现复现了临时 journal 在 existsSync 后、lstat 前被删除所致的 ENOENT，也发现悬空 sidecar 符号链接会被 existsSync 跳过。修复直接检查 sidecar，只容忍正常缺失；权限错误和常规/悬空符号链接仍拒绝。新增两项回归，并发写入测试包含子进程 stderr。
+
+本机 127 项测试、类型检查、构建及无外部 Bun/Node 的独立程序验收通过。Claude/Codex 插件及内置规范版本更新为 Alpha 6；功能及原生验证边界与下节一致。新版本经四平台检查后发布，公开安装及 marketplace 安装另行复验。
+
 ## Alpha 5：插件生命周期 hooks 与移除 Channel（2026-10-29）
 
 本轮移除 Channel 接收器、MCP SDK 依赖、启动握手及专用恢复流程；Claude join 自动尝试绑定准确且版本受支持的原生 socket，Codex 继续使用 queue。原有 Channel 章节和回传数据仅作历史，不代表当前功能。
