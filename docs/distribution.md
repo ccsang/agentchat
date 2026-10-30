@@ -1,28 +1,41 @@
-# 安装包与版本发布
+# Distribution and releases
 
-安装入口是公开仓库的 [ONBOARDING.md](../ONBOARDING.md)。程序本机安装一次；随后在业务项目中 join，首次加入只准备本地运行状态，不改项目指令或 hooks；创建或选择聊天室不重复安装。只要求安装或建房时按范围完成后停止。
+English | [Chinese translation](zh-CN/distribution.md)
 
-## 分发结构
+The public entry point is [ONBOARDING.md](../ONBOARDING.md). Install the program once; first join prepares local project state, and rooms are created/selected separately. Installation or room creation alone does not authorize further setup.
 
-- GitHub 仓库同时提供 Claude 的 .claude-plugin/marketplace.json 和 Codex 的 .agents/plugins/marketplace.json，指向同一个 plugins/agentchat。薄 skill 只有一份；插件本身独立版本化，CLI 后续更新不强制重发未改变的插件。
-- 插件包含便携 plugin.json 与宿主兼容描述，默认推荐用户级安装，不内置业务项目路径、会话或房间，Claude manifest 另声明短 SessionStart/SessionEnd hooks，Codex 不加载它们；无 MCP 服务。程序安装器不会顺带注册插件。
-- 详细协作规范编译进 CLI，由 skills get 提供；--json 额外返回版本和内容哈希，skills list 提供发现。命令不需要项目、身份、外部 Markdown 或网络；读取不会初始化房间或写配置。
+## Package layout
 
-- GitHub Release 提供 macOS / Linux 的 arm64、x64 独立程序压缩包、SHA256SUMS、安装器、接入说明及许可证。
-- 独立程序包含 Bun 1.3.14 及 CLI 依赖，不要求用户另装 Bun、Node.js 或克隆源码。Linux 包使用 glibc；Windows 尚未提供安装包。
-- 安装器按系统和 CPU 选择包，先校验压缩包，再校验解压后的程序；校验通过前不会执行下载内容。不修改 PATH、全局 agent 设置、认证或审批。
-- 程序保存在 `${XDG_DATA_HOME:-$HOME/.local/share}/agentchat/<版本>/<平台>/agentchat`。`AGENTCHAT_INSTALL_DIR` 可指定其他绝对路径。
-- 程序安装器默认只提供 `~/.local/bin/agentchat` 命令，不更改业务项目或 shell 配置。`AGENTCHAT_BIN_DIR` 可指定命令目录；不覆盖同名的无关用户程序。PATH 未包含该目录时使用返回的 cli 绝对路径。
-- 首次 join 验证身份与目标房间后只准备私有入口、配置和数据。默认 join / room use / install 不读取或改写 AGENTS.md、CLAUDE.md、.claude/settings.local.json 或 Git exclude。项目 `run` 固定引用该版本缓存；不再生成 Claude Channel 入口；源码方式使用固定 Bun 与私有 JS。程序缓存只下载一次。
-- install --instructions 与 install --hooks 分别预览项目指令、Claude hooks 集成，--apply 才应用。集成选择按工作区记录；同仓库 worktree 共用房间，各自准备本地状态，不继承别的工作区启用的 hooks。
-- 命名房间数据位于项目集成目录的 rooms/<名称>，default 保留原 chat.db。每房间仍只有两张表；本地运行状态与房间数据分离。
-- 本地初始化与显式集成复用计划、备份、幂等和冲突检查。uninstall --instructions / --hooks 可分别移除；uninstall --apply 停用当前工作区并清理已启用的自有集成，保留所有房间、消息和全局程序，不删除仍可能被其他项目引用的缓存。
+- Claude `.claude-plugin/marketplace.json` and Codex `.agents/plugins/marketplace.json` point to the same `plugins/agentchat`. A shared thin skill discovers the actual CLI; plugin and CLI can version independently.
+- The portable/compatible manifests keep the same identity/version. Claude alone declares short lifecycle hooks; Codex does not load them. Plugins contain no business project/session/room paths or MCP service. The program installer does not register plugins.
+- The full protocol is compiled into the executable. `skills get --json` includes version/content/hash and works without project initialization, native identity, external Markdown or network.
+- GitHub Releases provide standalone macOS/Linux arm64/x64 gzip packages, SHA256SUMS, installer, English onboarding and licenses. Chinese onboarding is available in the repository.
+- Executables include Bun 1.3.14 and the CLI dependencies. Users need neither Bun/Node.js nor a source clone. Linux uses glibc; native Windows packages are not provided.
+- The installer chooses OS/CPU and verifies both compressed and extracted bytes before execution. It does not change PATH, projects, agent authentication/gateways or permission settings.
+- Cache executables under `${XDG_DATA_HOME:-$HOME/.local/share}/agentchat/<version>/<platform>/agentchat`; `AGENTCHAT_INSTALL_DIR` can select another absolute directory.
+- Provide `~/.local/bin/agentchat` by default; `AGENTCHAT_BIN_DIR` overrides the command directory. Preserve an unrelated existing command and return the absolute CLI path for use when PATH lacks that directory.
 
-不要删除仍被项目引用的版本缓存。移动项目后，用已安装程序的 install 预览并应用以修复私有入口；已启用的 hooks 需要单独显式更新，无需重新下载程序。Alpha 6 不再使用 Channel。升级会停用自有私有 Channel 入口；已加载的旧宿主配置可能需重载，不关闭业务会话，不重放旧通知。
+## Workspace state and upgrades
 
-默认不改项目文件从 Alpha 3 开始，内置规范从 Alpha 4 开始。升级时先运行新版安装器；已初始化的项目入口用全局新版 install 预览并 --apply 更新本地运行文件，再读取该入口的 skills get。重复 join 不替换已固定的旧程序。升级不自动修补或删除旧管理块、hooks；明确需要时分别预览 install/uninstall --instructions 或 --hooks，再应用所选范围。通知自带本地 CLI 路由，普通通信不需要这两类项目文件。Alpha 7 通知改用三行 Read argv，升级到实际 Alpha 7 项目入口才会生成该格式；薄 skill 应通过宿主更新以识别新旧提醒，已加载的同版本规范无需每次重读。Claude 插件 hooks 通过宿主管理，不需要 --hooks 项目副本；开启 --auto-join 后仅在已初始化工作区自动加入。全局程序与插件都需更新到 Alpha 6，插件最低版本检查会拒绝继续旧 Channel 流程。
+First join validates identity/room, then prepares private entry/config/data. Default join/room use/install does not read or change AGENTS.md, CLAUDE.md, project settings or Git exclude. A compiled private run pins its version cache; source development pins Bun and a private JS bundle. No Channel launcher is generated.
 
-## 验证与构建
+`install --instructions` and `install --hooks` explicitly preview their own integrations; `--apply` applies the selected scope. Worktrees share rooms but keep independent workspace installation/integration choices. Default keeps the original chat.db; named rooms use rooms/<name>/chat.db. Each database has only members/messages.
+
+Reuse preview/backup/idempotency/conflict checks. Selective uninstall keeps runtime/history; unqualified `uninstall --apply` disables the workspace and removes its enabled owned integrations, preserving rooms, messages, the global program and caches referenced by other projects. It does not revert a separate Claude user-setting choice.
+
+Run a newer installer first, then explicitly repair the requested project's pinned entry using the new global install preview/apply. Repeating join does not update an existing pin. Load that actual entry's skills get after upgrading. Old project blocks/hooks remain unchanged unless separately requested. Owned private Channel launchers are retired during migration; old loaded host settings may require reload, but business clients are never killed and old notifications never replayed.
+
+Alpha 3 introduced runtime-only defaults, Alpha 4 embedded instructions, Alpha 5/6 plugin lifecycle hooks/native socket reception, Alpha 7 compact Read argv notices and Alpha 8 explicit inbound-policy setup/startup display. Update the host plugin through its manager when its thin skill/hooks change. CLI updates never overwrite caches; no project hook copy is needed for a plugin user.
+
+## Claude startup policy
+
+For requested unattended reception, Alpha 8's `claude-inbound accept` preview/apply saves user-level crossSessionInbound before startup, with an exact backup and preserved unrelated values. It honors CLAUDE_CONFIG_DIR, requires no project/identity and exposes no unrelated setting contents. Accept covers all peer messages in that configuration; it is separate from ordinary install/join and workspace autoJoin.
+
+The choice persists; the startup hook displays it in initialized workspaces and preserves later hold/refuse. Managed/launch/stricter project rules still apply. `doctor` and the hook report a configured user value, never an inferred effective policy or model-processing proof. See [onboarding](../ONBOARDING.md#claude-inbound-policy-and-startup).
+
+Primary docs and release notes are English. Chinese translations live in docs/zh-CN with corresponding links. Keep the current onboarding translation synchronized; preserve historical release notes as historical behavior, not instructions to follow today.
+
+## Build and verify
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts
@@ -30,22 +43,22 @@ bun run check
 bun test tests
 bun run build
 bun run build:release
-bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.7-darwin-arm64
+bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.8-darwin-arm64
 ```
 
-`build:release --target linux-x64` 等入口可交叉编译；release workflow 在四种原生 runner 上分别运行测试、构建和独立程序验收。验收使用全新目录、带空格/引号的路径及不含开发工具的 PATH，检查程序安装与同名命令保护、默认加入不改项目文件、显式可选集成、后续加入、房间切换、hooks、SQLite 收发/mark 和卸载，不向真实会话发通知。
+`build:release --target linux-x64` supports cross-compilation. The release workflow uses four native runners for tests, builds and standalone verification. Fresh directories, special-character paths and PATH without developer runtimes cover installation/command protection, runtime-only defaults, explicit integrations, rooms, hooks/startup notices, inbound-policy preview/backup/reversal, SQLite messaging/mark and removal. Fake clients never notify real sessions.
 
-构建会从 Bun 的模块清单收集实际打入程序的第三方许可证，和 Bun 1.3.14 的原始许可说明一起生成 `THIRD_PARTY_LICENSES.txt`。AgentChat 自有代码采用根目录 LICENSE；Bun/JavaScriptCore 等保留各自许可及源码、重新链接说明。
+Builds derive THIRD_PARTY_LICENSES.txt from bundled modules and Bun 1.3.14's original license notice. AgentChat uses the root MIT LICENSE; Bun/JavaScriptCore retain their respective licenses and source/relinking information.
 
-原生模型接收验收独立于安装包验证。目前 socket 的真实验收仅覆盖 macOS arm64、Claude Code 2.1.312 / peerProtocol 1 交互 CLI；在其他机器上仍需 `doctor` 和新 nonce 回传确认，不能以包能启动代替自动收信证据。
+Native model acceptance is separate. Historical evidence covers only the original macOS arm64 Claude Code 2.1.312 / peerProtocol 1 interactive session. A new user/instance needs doctor and a fresh correlated nonce; a working package is not that evidence.
 
-## 发布
+## Publish
 
-1. 更新 package.json、install.sh 中的版本及版本发布说明，提交 PR。
-2. 等待四种平台的自动化检查和独立安装包验收通过，合入 main。
-3. 对同一个已验收提交打 `v<版本>` 标签并推送。workflow 校验标签和 package 版本一致，在四平台重新构建和验收；全部通过后才发布 GitHub Alpha Release。
-4. 从无 GitHub 登录的环境安装全局程序，在两个新项目 join，并验证建房、切房及消息隔离，再分享 ONBOARDING.md 链接。
+1. Update package/installer version and English release notes; synchronize Chinese translations and submit a PR.
+2. Wait for all four native checks/package verification, then merge main.
+3. Tag the same verified commit `v<version>`. The workflow validates the version and rebuilds/rechecks all platforms before publishing a prerelease.
+4. From an unsigned-in environment, install the public program in isolated user configuration, join two fresh projects and check room/message separation, upgrades and policy setup. Verify public marketplace installs separately. Share the onboarding link after those checks.
 
-Alpha 使用固定版本下载链接，不依赖 GitHub 的 latest Release 跳转。后续升级发布新标签和安装说明，不覆盖旧版本的包或改变现有项目的固定路径。
+Alpha installers use fixed release URLs instead of latest redirects. Publish a new tag and packages for upgrades; never replace old release bytes or rewrite project pins globally.
 
-构建方式参考 [Bun 独立程序](https://bun.sh/docs/bundler/executables)，平台 runner 参考 [GitHub 官方说明](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)。
+References: [Bun standalone executables](https://bun.sh/docs/bundler/executables), [GitHub hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).

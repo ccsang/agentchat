@@ -38,6 +38,18 @@ try {
   const conflict = spawnSync(program, ["setup"], { cwd: project, env, encoding: "utf8" });
   assert(conflict.status !== 0 && readFileSync(globalCli, "utf8") === "Unrelated user command\n", "Program setup overwrote an unrelated command");
   writeFileSync(globalCli, wrapper);
+  const inboundPath = join(env.CLAUDE_CONFIG_DIR!, "settings.json");
+  assert(JSON.parse(run(program, ["claude-inbound", "accept"])).applied === false && !existsSync(inboundPath), "Inbound preview wrote user settings");
+  mkdirSync(env.CLAUDE_CONFIG_DIR!, { mode: 0o700 });
+  const originalInbound = '{"model":"preserve-user-model","permissions":{"deny":["Bash(curl:*)"]}}\n';
+  writeFileSync(inboundPath, originalInbound, { mode: 0o600 });
+  const inboundApplied = JSON.parse(run(program, ["claude-inbound", "accept", "--apply"]));
+  assert(inboundApplied.applied && inboundApplied.configured === "accept" && !inboundApplied.reception_verified, "Compiled inbound setup failed or claimed reception");
+  assert(readFileSync(inboundApplied.backup, "utf8") === originalInbound, "Inbound backup does not preserve exact original settings");
+  assert(JSON.parse(readFileSync(inboundPath, "utf8")).permissions.deny[0] === "Bash(curl:*)", "Inbound setup overwrote unrelated permissions");
+  const inboundTime = statSync(inboundPath).mtimeMs;
+  assert(!JSON.parse(run(program, ["claude-inbound", "accept", "--apply"])).changed && statSync(inboundPath).mtimeMs === inboundTime, "Inbound setup is not idempotent");
+  assert(!existsSync(join(project, ".agentchat")), "Inbound setup initialized a project");
   const pluginWrapper = resolve(import.meta.dir, "../plugins/agentchat/scripts/hook.sh"), nativeEnv = join(root, "native-env");
   const startupSession = randomUUID(), startup = JSON.stringify({ session_id: startupSession, cwd: project, hook_event_name: "SessionStart" });
   writeFileSync(nativeEnv, "export USER_RULE='keep'\n", { mode: 0o600 });
@@ -53,6 +65,7 @@ try {
   assert(invoke(["install", "--auto-join", "--apply"]).applied, "Auto-join configuration failed");
   const startupResult = JSON.parse(run("/bin/sh", [pluginWrapper, "session-start"], startup));
   assert(startupResult.hookSpecificOutput.additionalContext.includes(program), "Plugin context used an old pinned executable");
+  assert(startupResult.systemMessage.includes("accept peer messages automatically"), "Startup did not display configured inbound policy");
   assert(invoke(["members"]).members.some((member: { session_ref: string }) => member.session_ref === startupSession), "Compiled plugin startup did not enroll the fixture session");
   run("/bin/sh", [pluginWrapper, "session-end"], JSON.stringify({ session_id: startupSession, cwd: project, hook_event_name: "SessionEnd" }));
   assert(JSON.parse(readFileSync(join(project, ".agentchat", "sessions", `${startupSession}.json`), "utf8")).active === false, "Compiled plugin SessionEnd did not clean up");
@@ -60,6 +73,7 @@ try {
   const optional = invoke(["install", "--instructions", "--hooks"]);
   assert(optional.project_file_changes.length === 3 && !optional.applied && !existsSync(join(project, ".claude")), "Optional integration preview wrote project files");
   assert(invoke(["install", "--instructions", "--hooks", "--apply"]).applied, "Explicit integration failed");
+  assert(!/\p{Script=Han}/u.test(readFileSync(join(project, "AGENTS.md"), "utf8")), "Generated project instructions are not English");
   const userFiles = ["AGENTS.md", "CLAUDE.md", ".claude/settings.local.json"].map(path => readFileSync(join(project, path), "utf8"));
   const programTime = statSync(program).mtimeMs;
   const room = join(project, ".agentchat"), entry = join(room, "run");
@@ -127,9 +141,14 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
   assert(invoke(["uninstall", "--apply"]).applied, "Uninstall failed");
   assert(readFileSync(join(project, "AGENTS.md"), "utf8") === "Existing project instructions\n", "Uninstall removed user instructions");
   assert(existsSync(join(room, "chat.db")), "Uninstall deleted history");
+  assert(JSON.parse(readFileSync(inboundPath, "utf8")).crossSessionInbound === "accept", "Project uninstall unexpectedly changed the separate user inbound choice");
+  assert(JSON.parse(run(program, ["claude-inbound", "hold", "--apply"])).configured === "hold", "Compiled hold setup failed");
+  assert(JSON.parse(run(program, ["claude-inbound", "refuse", "--apply"])).configured === "refuse", "Compiled refuse setup failed");
+  assert(JSON.parse(run(program, ["claude-inbound", "default", "--apply"])).configured === null, "Compiled default reversal failed");
+  assert(JSON.stringify(JSON.parse(readFileSync(inboundPath, "utf8"))) === JSON.stringify(JSON.parse(originalInbound)), "Reversing inbound setup removed unrelated settings");
   const afterUninstall = randomUUID();
   assert(run("/bin/sh", [pluginWrapper, "session-start"], JSON.stringify({ session_id: afterUninstall, cwd: project, hook_event_name: "SessionStart" })) === "{}", "Plugin enrolled an uninstalled workspace");
   console.log(JSON.stringify({ ok: true, version, platform: process.platform, arch: process.arch,
-    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "compact_three_line_notification", "compact_routing_after_room_switch_from_other_cwd", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
+    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "inbound_preview_no_writes", "inbound_exact_backup_and_preserved_settings", "inbound_idempotency_and_reversal", "startup_inbound_policy_notice", "generated_english_instructions", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "compact_three_line_notification", "compact_routing_after_room_switch_from_other_cwd", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
     native_reception_verified: false }));
 } finally { rmSync(root, { recursive: true, force: true }); }

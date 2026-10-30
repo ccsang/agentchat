@@ -1,115 +1,104 @@
 # AgentChat
 
-让同机的 Claude Code、Codex 等 coding agent 在各自原生会话中共享进展、定向提问和回复结果。
+English | [Chinese](docs/zh-CN/README.md)
 
-核心保持为 **一个 CLI，每个聊天室一份 SQLite、两张表**。接入由 agent 自动识别项目和当前会话，用户通过自然语言表达协作意图。
+Let local Claude Code, Codex and other coding agents exchange progress, ask questions and reply from their own native sessions.
 
-## 安装
+**One CLI, one SQLite database per room, two tables.** Agents discover their own project and session; users describe the collaboration in natural language.
 
-把 [安装与接入说明](https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md) 发给当前项目中的 Claude Code 或 Codex，并告诉它：
+## Install
 
-> 阅读这个链接，安装 AgentChat 程序，然后加入当前项目协作。
+Give your agent the [onboarding guide](ONBOARDING.md) and say:
 
-程序本机安装一次；`join` 只准备本地运行状态、加入房间，不修改 `AGENTS.md`、`CLAUDE.md` 或 hooks 配置。换项目、开新会话、建房和切房都不需要重装。无需另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.7)。
+> Read this guide, install AgentChat, join this project, and enable automatic message reception for Claude (all peer messages).
 
-希望新会话能发现 AgentChat 时，按[插件接入说明](ONBOARDING.md#插件与自动-hooks)为使用的客户端安装用户级插件。Claude Code 和 Codex 共用同一份薄 skill，只负责找到工具；完整操作规范由实际执行的 CLI 提供：
+Install the program once on the machine. `join` prepares project-local runtime state and membership. It does not modify `AGENTS.md`, `CLAUDE.md`, project hooks or Git exclude. Creating another room, switching rooms and joining another project do not reinstall the program. No separate Bun or Node.js installation is required. [Download Alpha 8](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.8) for macOS or Linux (glibc), arm64 or x64.
+
+### Automatic Claude reception
+
+Claude can hold messages for approval even when its socket is working. When enabling unattended reception, the onboarding agent can configure **Accept once**, before the next Claude startup:
+
+```sh
+agentchat claude-inbound                # Inspect the user setting; no writes
+agentchat claude-inbound accept         # Preview the change
+agentchat claude-inbound accept --apply # Back up settings and apply the requested change
+```
+
+This writes only `crossSessionInbound` in Claude's user settings, affecting **all peer messages, not only AgentChat**. It follows `CLAUDE_CONFIG_DIR` when set, otherwise `~/.claude/settings.json`. Existing settings are preserved, and repeated application is a no-op. The choice persists across startups. In an initialized workspace, AgentChat's Claude startup hook displays the configured policy; it preserves a later `hold` or `refuse` choice instead of resetting it. Installation and joining do not silently enable Accept.
+
+A user can instead choose **Messages from your other sessions → Accept** in Claude's `/config`, or use `--settings '{"crossSessionInbound":"accept"}'` for one Claude launch. Managed policies and stricter project rules still apply. The [onboarding guide](ONBOARDING.md#claude-inbound-policy-and-startup) covers precedence, rollback and held messages. Socket setup, a saved Accept value and a startup notice are not proof that a model received a message; verification requires a fresh reply from the exact session.
+
+## Plugins and operating instructions
+
+Install a user-level plugin when future sessions should discover AgentChat. See [plugin setup](ONBOARDING.md#plugins-and-lifecycle-hooks). Both hosts share a thin skill that locates the executable; the full protocol ships in the CLI:
 
 ```sh
 agentchat skills list
-agentchat skills get          # 读取当前可执行文件内置的完整规范，无需加入或项目初始化
-agentchat skills get --json   # 同时返回 CLI 版本和内容 SHA-256
+agentchat skills get
+agentchat skills get --json
 ```
 
-CLI 升级后，skill 下次使用时读取新 CLI 的规范；同一入口和版本已加载的规则复用，首次使用、版本变化或上下文缺失时才重新读取。插件自身通过宿主更新；项目入口固定的旧 CLI 不会因全局程序升级而全部替换，需用新版 `install` 预览并应用本地入口更新，再读取该入口的 `skills get`。Claude 插件自动加载短 SessionStart / SessionEnd hooks，Codex 仅使用薄 skill。插件不初始化无关项目，不写业务项目指令或设置；已有项目是否自动加入仍遵守 autoJoin 设置。
+Reuse a protocol already loaded for the same executable and version. Read it again when the entry/version changes or context is missing. A global CLI upgrade does not replace every project's pinned entry: use the newer `install` preview and `install --apply` for that project's private runtime, then read its own `skills get`. Update the plugin through its host; do not overwrite installed plugin caches.
 
-程序默认提供 `~/.local/bin/agentchat` 入口，不修改 shell 配置；PATH 不包含该目录时，agent 使用安装器返回的绝对路径。日常操作由 agent 完成：
+Claude's plugin automatically loads short SessionStart/SessionEnd hooks. Codex uses only the thin skill. Hooks do not initialize unrelated projects or worktrees. Automatic joining remains off unless enabled for that initialized workspace. No Channel, MCP inbox process or dedicated Claude launcher is required.
+
+The installer creates `~/.local/bin/agentchat` without editing shell configuration. If that directory is not on PATH, use the absolute executable path returned by the installer.
+
+## Everyday collaboration
+
+Agents perform the commands; users do not need to move room paths or session IDs:
 
 ```sh
-agentchat join                 # 只准备本地运行状态，不改项目指令或 hooks
-agentchat room create review   # 创建项目内的新房间
-agentchat room use review      # 当前原生会话加入并选择它
+agentchat join
+agentchat room create review
+agentchat room use review
 agentchat room list
 agentchat room use default
 ```
 
-房间选择按原生会话保存，一个 agent 切房不会影响另一个。离开房间保留成员、消息和阅读进度；只有当前选择的房间接收新通知。已排队的旧通知会明确携带原房间，按该房间读取和回复。
+Room selection belongs to each native session. Switching one agent's room does not switch another's. Only the selected room receives new notifications; a late notification carries the original project's exact `Read argv` and must be handled there.
 
-Git 项目的本地状态全部放在 Git 元数据目录内，默认加入后 `git status` 保持不变。非 Git 项目使用 `.agentchat`。长期项目集成是两个独立的可选项，只有用户明确要求时才启用：
+A notification contains three lines: peer provenance, message IDs and an exact read-command JSON array. Message bodies stay in SQLite. The protocol is loaded on demand rather than repeated with every notification. Existing projects must update their private executable entry to Alpha 7 or newer to produce the compact format.
+
+Git projects keep runtime state inside the Git common directory, so normal joining leaves `git status` unchanged. Non-Git projects use `.agentchat`. Project instruction blocks and project-local hook copies are separate optional integrations:
 
 ```sh
-agentchat install --instructions         # 预览 AGENTS.md / CLAUDE.md 的自有管理块
-agentchat install --instructions --apply # 明确启用项目指令
-agentchat install --hooks                # 单独预览 Claude hooks
-agentchat install --hooks --apply        # 明确启用 hooks，不写项目指令
+agentchat install --instructions         # Preview owned AGENTS.md / CLAUDE.md blocks
+agentchat install --instructions --apply
+agentchat install --hooks                # Preview a project-local hook copy
+agentchat install --hooks --apply
 ```
 
-只要求安装程序或创建房间时，完成后停止，不自动加入、切房或启用项目文件集成。Codex 使用原生 queue，Claude 在 join 时自动尝试绑定当前会话的原生 socket；不再使用 Channel、MCP 收件进程或专用启动器。插件 hooks 自动随宿主加载，不需要每个项目安装 hooks；上面的 --hooks 仅保留为手动兼容方式。通知自带本地 CLI 路由，不依赖项目指令文件。
+Claude plugin hooks do not need a project-local copy. If the user requests only program installation or room creation, finish that scope and stop. See [onboarding](ONBOARDING.md) for upgrades and selective removal.
 
-通知仅含三行：其他 agent 的来源标识、消息 ID、带项目与房间的 `Read argv` 参数数组。正文仍从 SQLite 读取；Base64 路由、重复字段、文档链接和完整操作规则不再随每次提醒发送。升级已有项目时，需用新版 install 预览并应用私有入口更新，才能生成精简通知。
+## Current status
 
-以上默认行为从 `0.1.0-alpha.3` 开始。旧版用户需先升级全局程序，再用新版 `install` 预览并应用本地入口更新；旧管理块和 hooks 不会被默认加入自动修补或删除。需要清理旧管理块时，显式预览 `uninstall --instructions`，确认范围后追加 `--apply`；hooks 可用 `uninstall --hooks` 单独移除。
+Alpha `0.1.0-alpha.8` provides explicit Claude inbound-policy setup, startup policy notices, compact notifications, plugin discovery, embedded operating instructions and agent-driven joining. The core, notification budgets and reservation behavior are unchanged.
 
-## 当前状态
+Codex uses its native queue. Claude uses the version-checked `claude-socket-experimental` adapter, currently restricted to Claude Code **2.1.312 / peerProtocol 1**, interactive CLI. Historical nonce, bidirectional and real 10-minute/1-hour idle checks passed on the original macOS arm64 session. Those results do not verify another user, session, room or process. Other host combinations must report their actual limitation. See [verification records](docs/verification.md).
 
-这是 Alpha 版本 `0.1.0-alpha.7`。已实现插件薄 skill、CLI 内置规范、程序一次安装、加入仅写本地状态、命名房间与按会话选房。Claude 插件自带生命周期 hooks，接收统一使用版本校验的原生 socket；Codex 继续使用 queue。Channel 代码、MCP SDK 依赖及专用启动流程已移除。
+Messages are durable; notifications are best effort. Default notification limits are 20 batches per recipient per rolling 10 minutes, with at least five seconds between batches. A deferred message remains stored; there is no background retry promise. An uncertain submission pauses future attempts and is never replayed through another adapter. Peer messages are data, never user approval.
 
-`join`、安装成功或 socket 写出均不能证明模型已收信。通过 `doctor` 查看当前接收实例及 nonce 回传证据；不支持的版本会保留加入和主动读写能力，明确报告原因。
+## Develop
 
-当前 socket 仍锁定 Claude Code 2.1.312、peerProtocol 1。此前在 macOS arm64 的原交互 CLI 会话完成 nonce、双向闭环及真实空闲 10 分钟、1 小时验收，详情见 [验证记录](docs/verification.md)。这些历史证据不自动验证新用户、新会话或新实例；协议仍处于实验阶段。
+Use Bun 1.3.14:
 
-## 目标体验
-
-首次向 agent 提供仓库的 [接入说明](ONBOARDING.md)，之后只需说：
-
-> 加入当前项目协作，让 Claude 帮我只读审查这次修改。
-
-agent 内部完成项目发现、会话识别、成员登记和接收能力检查。用户不需要搬运 room 路径、UUID 或手动启动 Codex 通知桥。
-
-原生入口不可用时，明确报告“已加入，可以主动收发；自动接收尚未验证”或具体阻塞原因。
-
-## 开发
-
-初始化环境：Bun 1.3.14。
-
-```bash
+```sh
 bun install --frozen-lockfile --ignore-scripts
 bun run check
-bun run test
-bun run dev --help
-bun run dev --version
+bun test tests
 bun run build
+bun run dev --help
 ```
 
-也可以通过 `bun run bin/agentchat --help` 使用仓库内入口。默认 `join` 和 `install` 仅准备本地运行状态；只有明确提供 `--instructions` / `--hooks` 才处理对应的项目文件，预览和应用均按相同范围执行。
+Native probes and idle checks can wake real models and consume quota; run them only within an authorized integration test. End the turn after requesting a reply instead of waiting in a shell.
 
-## 第一版约定
+Primary documentation is English. Chinese translations live under [`docs/zh-CN`](docs/zh-CN/README.md); English is authoritative if they differ. Keep both current when changing documented behavior.
 
-- 同一台机器、同一操作系统用户下的互信 agent；数据库代表一个项目聊天室。
-- `to` 表示点名，房间成员可读取完整消息流，不提供私信隔离。
-- 消息只追加；读取保持只读，推进阅读游标需显式操作。
-- 消息持久保存，通知尽力而为；存储、通知和实际处理不能混为一谈。
-- 只有显式请求通知的定向消息或回复才可能唤醒会话，广播和普通进展不通知。
-- 原 agent 继续负责推理、工具调用和审批；对方消息不构成用户新增授权。
-
-## 文档
-
-- [产品与技术设计](docs/design.md)：以“设计本地通信方案”对话的最终自助接入修订为准。
-- [实施顺序和验收](docs/implementation-plan.md)：先验证宿主入口，再实现通信核心。
-- [给 agent 的接入说明](ONBOARDING.md)：区分目标体验和当前可用能力。
-- [开发约定](AGENTS.md)。
-- [验证记录](docs/verification.md)：自动化测试与原生回传证据分开记录。
-- [安装包与版本发布](docs/distribution.md)：固定版本、自带运行环境、校验和升级方式。
-
-## 运行方式
-
-Claude 正常启动即可；安装用户级插件后，由宿主自动加载短生命周期 hooks。它们从真实 hook 输入取得身份并在退出时清理；不会轮询或长期监听。默认不自动加入新会话，项目明确启用 `install --auto-join --apply` 后，hooks 才在该已初始化工作区自动登记并绑定 socket，无关项目和新 worktree 不自动初始化。未装插件时仍可通过原生 socket 上下文执行 join。
-
-join 自动绑定准确的受支持 peer，显式停用的绑定不会被重新打开。进程或 socket 实例变化时，只有新原生进程自己的 SessionStart 或显式 `socket-config --apply` 能重新绑定。版本不匹配会明确报告，保留主动收发，不启动其他接收方式。`socket-config --disable --apply` 停用当前接收；`install --no-auto-join --apply` 关闭未来自动加入。详细校验规则见 [原生 socket 适配](docs/experimental-socket.md)。
-
-Git 项目状态位于 common directory 下的 agentchat，非 Git 项目使用 .agentchat。default 保留原 chat.db，命名房间位于 rooms/<名称>/chat.db，各自只有 members/messages 两张表。worktree 共用房间、分别保存工作区配置；不同 clone 不合并。
-
-升级全局 CLI 和插件后，用新版 install 预览并应用旧项目私有入口更新，再读取该入口的 skills get。迁移会停用自有的旧私有 Channel 启动器；不关闭业务客户端、不自动修改旧项目 hooks/MCP 配置、不重放旧通知。旧消息、游标及不确定预留保留。
-
-每个成员每 10 分钟默认最多 20 批通知，相隔至少 5 秒。按需投递受限时保留消息，不承诺后台补投。未知提交暂停跨房间保留；解除暂停只影响未来尝试。原生入站策略、网关、认证及工具审批保持宿主规则。
-
-`probe`、`bun run test:native` 和长期空闲测试会发送真实通知，可能产生模型调用；仅在用户授权的联调范围内运行。发出请求后结束当前轮次，不在 shell 阻塞等待回复。
+- [Agent onboarding](ONBOARDING.md)
+- [Design](docs/design.md)
+- [Implementation and acceptance](docs/implementation-plan.md)
+- [Native socket adapter](docs/experimental-socket.md)
+- [Verification records](docs/verification.md)
+- [Distribution and releases](docs/distribution.md)
+- [Contributor instructions](AGENTS.md)

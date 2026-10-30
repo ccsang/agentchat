@@ -38,6 +38,21 @@ test("auto-join opt-out and uninstall stop plugin enrollment", async () => {
   applyInstall(await planInstall(f.project, { uninstall: true }));
   expect(pluginHook(input(), "SessionStart", envFor())).toEqual({}); expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
 });
+test("startup displays inbound user policy without changing it or overriding hold/refuse", async () => {
+  applyInstall(await planInstall(f.project));
+  const env = envFor(), directory = env.CLAUDE_CONFIG_DIR!; mkdirSync(directory, { mode: 0o700 });
+  const path = join(directory, "settings.json");
+  for (const choice of ["accept", "hold", "refuse"]) {
+    const before = JSON.stringify({ crossSessionInbound: choice, model: "keep" }); writeFileSync(path, before, { mode: 0o600 });
+    const result = pluginHook(input(), "SessionStart", env);
+    expect(result.systemMessage).toContain(choice === "accept" ? "accept peer messages automatically" : `${choice} peer messages`);
+    expect(JSON.stringify(result)).toContain("effective native policy is unverified");
+    expect(readFileSync(path, "utf8")).toBe(before);
+  }
+  writeFileSync(path, "{}");
+  expect(pluginHook(input(), "SessionStart", env).systemMessage).toContain("may need your approval");
+  expect(readFileSync(path, "utf8")).toBe("{}");
+});
 test("subagent startup never leaks identity to the primary shell or creates project state", () => {
   const path = join(host.root, "env"); writeFileSync(path, "", { mode: 0o600 });
   expect(pluginHook({ ...input(), agent_id: "child", agent_type: "custom-primary" }, "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: path })).toEqual({});

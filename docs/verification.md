@@ -1,179 +1,124 @@
-# 验证记录
+# Verification records
 
-日期：2026-10-28。开发环境：macOS arm64、Bun 1.3.14。
+English | [Chinese translation](zh-CN/verification.md)
 
-## Alpha 7：精简消息提醒（2026-10-29）
+Development environment: macOS arm64, Bun 1.3.14. Dates and results below belong to their recorded revision. Synthetic/unit/package checks do not verify delivery to a real model, and a later release never inherits native proof for another session or instance.
 
-通知统一缩为来源标识、消息 ID、Read argv JSON 参数数组三行。路径和房间只在该命令中出现，不再发送 Base64 路由、重复成员/目录字段、文档链接和整段规则。薄 skill 兼容新 Read argv 与旧 Tool argv；完整规范按实际入口/版本复用，仅首次使用、版本/入口变化或上下文缺失时读取。
+## Alpha 8: Claude inbound setup and English docs (2026-10-30)
 
-本机 129 项测试、类型检查、源码构建和独立安装包验收通过。新增验证满批 20 个消息 ID 不丢失、正文不进入通知、路径含空格/单引号/美元符号时参数原样传递；接收方切回 default 并从另一个 cwd 处理迟到 review 通知，读取、回复和连续 mark 均留在原房间，当前选房不变。独立程序在无外部 Bun/Node 的 PATH 中通过假 queue 捕获实际精简通知，并执行其中的准确读取数组。
+Added user-level inbound inspection/preview/apply outside project/native-identity discovery, with accept/hold/refuse/default, exact prior-byte backups, preserved unrelated settings and modes, idempotency, malformed/link/permission rejection and stale-plan conflict checks. The command reports only the affected policy and file hashes, not unrelated settings. Default install/join still does not change user-level policy or business files.
 
-同一示例路径和消息 ID 下，单条通知由 1326 字节降至 242（约 82%），满批 20 条由 2124 降至 1040（约 51%）；这是通知字节比较，不是 token 测量或吞吐压测。安装与协议模拟仍不构成新模型收信证据，本轮未向真实会话发送通知。四平台检查及公开安装/升级按发布流程另行执行。
+In initialized workspaces, Claude SessionStart displays the configured user policy and passes it to the model context. Existing hold/refuse is preserved, unrelated projects remain silent, and effective native policy remains explicitly unverified. Doctor reports the user value separately from receiver/model proof. Onboarding describes assisted setup before startup, UI/per-launch alternatives, scope/precedence, reversal and old held messages.
 
-## Alpha 6：并发打开 SQLite 修复（2026-10-29）
+Primary project documents, historical release notes and generated instruction blocks are English. Chinese translations remain under docs/zh-CN. CLI, plugin, project pin and native host retain separate update/verification boundaries.
 
-Alpha 5 的 PR 四平台检查和 main 检查通过，但标签构建的 Linux arm64 并发写入测试有一个进程退出，发布因此跳过；没有重试到通过或覆盖标签。该旧测试未输出子进程 stderr，无法从日志确认那次退出的具体异常。
+137 local tests, type checking, source build and macOS arm64 standalone verification passed. The compiled binary ran with no external Bun/Node and verified read-only preview, exact backup, preserved settings, idempotency/reversal, startup policy output and generated English instructions. All 34 English/Chinese documents passed relative-link, anchor and primary-language checks; plugin manifest/skill validation passed. Four-platform and public-install results are recorded by the release workflow and subsequent checks. No real peer notification or model probe is part of this revision's ordinary verification.
 
-后续确定性回归在旧实现复现了临时 journal 在 existsSync 后、lstat 前被删除所致的 ENOENT，也发现悬空 sidecar 符号链接会被 existsSync 跳过。修复直接检查 sidecar，只容忍正常缺失；权限错误和常规/悬空符号链接仍拒绝。新增两项回归，并发写入测试包含子进程 stderr。
+## Alpha 7: compact notifications (2026-10-29)
 
-本机 127 项测试、类型检查、构建及无外部 Bun/Node 的独立程序验收通过。Claude/Codex 插件及内置规范版本更新为 Alpha 6；功能及原生验证边界与下节一致。新版本经四平台检查后发布，公开安装及 marketplace 安装另行复验。
+Notifications became three lines: provenance, message IDs and exact Read argv. Removed Base64 routing, duplicate fields, links and repeated full rules. The thin skill accepts new Read argv and legacy Tool argv; full instructions are reused for the same actual executable/version and reloaded only when missing or changed.
 
-## Alpha 5：插件生命周期 hooks 与移除 Channel（2026-10-29）
+129 local tests, type checking, source build and standalone verification passed. Coverage includes a full 20-ID batch, no business body in notifications, exact arguments for paths with spaces/apostrophes/dollar signs, and late review-room reads/replies/contiguous marks from another cwd after switching to default. The compiled executable captured/executed its actual notice through a fake queue with no external Bun/Node on PATH.
 
-本轮移除 Channel 接收器、MCP SDK 依赖、启动握手及专用恢复流程；Claude join 自动尝试绑定准确且版本受支持的原生 socket，Codex 继续使用 queue。原有 Channel 章节和回传数据仅作历史，不代表当前功能。
+For the same sample paths/IDs, one notice fell from 1326 to 242 bytes (about 82%); a 20-message batch fell from 2124 to 1040 bytes (about 51%). These are byte comparisons, not token or throughput measurements. Four native platforms and public upgrade/plugin installs subsequently passed release verification. No new real-model reception claim was made.
 
-本机 125 项自动化测试、类型检查、源码构建与独立程序验收通过。新增覆盖：join 不提交或预留通知；版本拒绝仍可加入；绑定前后显式停用跨 join/切房保留；只有新原生进程自身 SessionStart 能自动重绑变更实例；新实例不继承旧 nonce，旧消息预留不重置；SessionEnd 在进程仍活着时阻止新投递；旧 Channel unknown 暂停不被迁移清除；旧自有私有入口报废而用户入口不变。
+## Alpha 6: concurrent SQLite opening (2026-10-29)
 
-插件测试覆盖未初始化项目只向宿主私有环境持久化身份、已初始化且 autoJoin 开启时登记、默认关闭/明确停用/卸载、子 agent 忽略、原生 cwd 路由、--agent 命名主会话正常登记，以及含空格/单引号路径的 sh stdin 转发。独立程序在无外部 Bun/Node 的 PATH 中运行实际插件包装脚本，检查身份、工作区边界、自动加入、退出清理和卸载；没有加载业务项目 preload 或 dotenv。默认加入仍保留已提交或损坏的项目指令/hooks 文件和 Git exclude。
+Alpha 5's PR/main checks passed, but its tagged Linux arm64 concurrent-writer test had one failed child and publication was skipped. The old test did not print child stderr, so that historical failure's precise exception could not be confirmed. The failed tag was retained rather than retried into publication or replaced.
 
-隔离配置下，Claude Code 2.1.312 和 Codex CLI 0.165.0-alpha.1.2 均安装本地 marketplace 与新版插件，缓存 skill 与源码一致。Claude manifest 引用的 hooks 及脚本已进入安装缓存，SessionStart 包装脚本可调用独立程序；Codex 未声明 Claude hooks，也不存在会被默认发现的 hooks/hooks.json。Claude 插件/marketplace 严格 manifest 验证与 skill frontmatter 校验通过；插件目录检查另提示缺少图标，不阻断本地安装。
+A deterministic regression reproduced journal removal between existsSync and lstat, and a dangling-sidecar link being skipped. The fix inspects directly and tolerates only ENOENT; permission failures and both live/dangling links remain rejected. Concurrent tests now print child stderr. 127 local tests, type checking, build and standalone checks passed; the release delivered Alpha 5 functionality plus this fix after four-platform checks and public installation verification.
 
-hook 身份按 [官方输入定义](https://code.claude.com/docs/en/hooks#common-input-fields) 以 agent_id 判断子 agent；agent_type 也可能来自 --agent 主会话，不能单独据此跳过。
+## Alpha 5: plugin hooks and Channel retirement (2026-10-29)
 
-四平台的检查、构建与独立包验收由发布流水线执行，全部通过后才发布。公开安装包与公开 marketplace 安装在发布后另行复验。以上为包、hook 执行及合成 peer 测试，本轮没有向用户真实会话发通知或重做长期空闲测试；不声称新模型会话自动收信已验证。历史 socket nonce/双向/10 分钟及 1 小时证据仍仅适用于下面记录的原版本、会话、default 房间和实例。
+Removed Channel/MCP SDK/startup handshakes/dedicated recovery; join attempts exact supported native socket binding and Codex retains queue. 125 local tests, type checking, source and standalone builds passed. Added cases for no join-time notification/reservation, version refusal with manual access, disablement before/after bind and across rooms, authoritative new-process rebind, no inherited nonce/reset reservations, immediate SessionEnd inactivation, preserved old Channel unknown pauses and owned-launcher retirement.
 
-## Alpha 4：插件与内置规范（2026-10-29）
+Plugin tests cover host-private identity only for unrelated projects, autoJoin opt-in/default off/disable/uninstall, native cwd, subagents, --agent named primaries and special-character paths. Standalone sh wrappers work without external Bun/Node and do not load project dotenv/preload. Default joins preserve committed or malformed project files and Git exclude.
 
-`0.1.0-alpha.4` 增加插件薄 skill 和 skills list / skills get；完整规范作为文本资源编译进 CLI，由实际执行的版本输出。插件与 CLI 独立更新，旧项目入口通过显式本地 install 更新；默认加入不改项目文件的约定保留。
+Isolated Claude Code 2.1.312 and Codex CLI 0.165.0-alpha.1.2 installed the local marketplace/plugin; cached thin skill matched source. Claude's declared hook/scripts were present and executable; Codex declared none, and no default hooks/hooks.json existed. Strict manifest and skill validation passed; an optional missing icon finding did not block local installation. The [official hook input](https://code.claude.com/docs/en/hooks#common-input-fields) uses agent_id for subagents; agent_type alone may describe a primary launched with --agent.
 
-本机 139 项测试通过，新增检查：即使项目路径不存在、Git 不可用、原生身份冲突，规范读取仍成功且不创建文件；Markdown 与 JSON 内容逐字相同，版本与内容哈希一致；无效标志和未知规范拒绝，不进入 join；安装后的私有 JS bundle 无需独立 Markdown；两个 marketplace 指向同一份 skill，便携与宿主 manifest 身份/版本一致。
+These package/hook/synthetic-peer results did not notify real sessions or repeat idle tests. The tagged build subsequently failed as recorded above; Alpha 6 published the functionality and fix. Historical real socket proof remains limited to the original combination below.
 
-独立安装包验收核对临时移动后的二进制和项目固定入口返回相同版本/内容，且读取不会初始化项目。宿主插件识别使用隔离用户配置；原有真实会话与插件配置不作为测试对象。四平台结果由发布流水线记录，公开下载另行复验。安装/发现/协议读取不是模型触发或原生收信验证，本轮不发送真实通知。
+## Alpha 4: plugin and embedded instructions (2026-10-29)
 
-本机 Claude Code 2.1.312 与 Codex CLI 0.165.0-alpha.1.2 已在临时用户配置中完成 marketplace 注册、插件安装，安装缓存中的薄 skill 与共享源码逐字匹配。Claude 插件与 marketplace 严格验证通过，skill frontmatter 校验通过。该结果仅证明这些客户端能安装此包，不外推其他宿主版本或模型触发效果。
+139 local tests passed. Skills list/get/JSON read the actual compiled executable's protocol without project discovery, native identity or network. Cases include nonexistent project paths, unavailable Git, conflicting identity, exact Markdown/JSON equality, version/content hash, invalid arguments and a private JS bundle with no separate Markdown dependency. Both marketplaces reference the same skill and consistent manifests.
 
-## Alpha 3：默认加入不改项目文件（2026-10-29）
+Standalone checks compared moved/pinned entries. Isolated Claude Code 2.1.312 and Codex CLI 0.165.0-alpha.1.2 installed the marketplace/plugin and their cached skill matched source. Manifest/frontmatter validation passed. Four-platform/public checks are release evidence, not model-trigger or automatic-reception proof.
 
-`0.1.0-alpha.3` 将本地运行状态和项目文件集成分开。默认 join / room use / install 不读取或改写 AGENTS.md、CLAUDE.md、.claude/settings.local.json 或 Git exclude；--instructions 与 --hooks 独立预览、启用和移除。旧版本只升级私有入口，不自动修补或删除原有集成。
+## Alpha 3: runtime-only join (2026-10-29)
 
-本机 135 项测试、类型检查与构建通过。新增回归在 Git 中提交指令和损坏的 hooks 文件后执行首次加入、重复加入、建房和切房，核对 git status 始终干净及 Git exclude 字节不变；同时覆盖指令符号链接、损坏管理块、可选集成独立启停、过期计划不覆盖新的集成选择、旧版本升级保留文件、移除 hooks 后 Channel 停止，以及新 worktree 不继承其他工作区的集成选择。
+135 local tests, type checking, build and standalone verification passed. Committed instructions and malformed hook files remained unchanged/clean across first/repeated join, creation and room switching; Git exclude bytes were preserved. Tests also covered linked instruction files, malformed blocks, separate integration enable/removal, stale plans, preserved old integrations and independent worktree choices.
 
-本机独立程序在不含外部 Bun 的 PATH 中完成首次加入仅写本地状态、可选集成预览无写入及显式应用、后续加入/切房不重写配置、hooks/启动入口、SQLite 收发与 mark、卸载保留历史。四平台由[发布流水线](https://github.com/ccsang/agentchat/actions/workflows/ci.yml)执行同样检查，全部通过后才发布安装包。公开下载验收另使用两个全新 Git 项目，重点核对默认加入后已提交项目文件保持不变。
+Synthetic identities/peers and public downloads in two fresh Git projects checked the new default. These did not notify real hosts or redo idle tests. Historical native proof remained scoped to its original default room and process.
 
-本轮测试均使用合成身份和协议模拟，没有向真实原生会话发送通知，也没有重新进行长期空闲验收。此前真实收信证据仅适用于下列原版本、原会话、default 房间和接收实例。
+## Alpha 2: global program and named rooms (2026-10-29)
 
-## Alpha 2：全局程序与命名房间（2026-10-29）
+126 local tests passed. Coverage included initial/concurrent joins, workspace reuse, per-native-session selection, same message IDs in different rooms, explicit routing without selection changes, no reservations for unselected rooms, path/link rejection, historical Channel hot-switch, old-client upgrade refusal, cross-room unknown pauses and room-specific socket proofs.
 
-`0.1.0-alpha.2` 将默认安装器改为只安装一次程序，首次 join 自动初始化项目，增加 room create/list/current/use。旧 default 数据库不移动；命名房间分别保存成员、消息和游标。
+Standalone/native-runner checks covered global installation/command protection, first/subsequent joins, no room-time reinstall, messaging and removal. Channel used in-memory MCP and socket used an isolated peer, not new real-model acceptance.
 
-本机 126 项测试通过。新增覆盖首次/并发加入、工作区配置复用、各原生会话独立选择、同名消息跨房间隔离、显式路由不改选择、未选房间不消耗通知预留、目录逃逸/符号链接拒绝、Channel 在同一进程热切房间、旧活跃 Channel 升级提示、未知 Channel/socket 暂停跨房间保留、端点复用但 nonce 不跨房间复用，以及复制 peer 绑定的项目边界。
+## Alpha 1: standalone distribution (2026-10-29)
 
-独立程序在无外部 Bun 的 PATH 中验证全局入口、同名无关命令保护、首次 join 初始化、后续会话加入、切房不重装、不重写项目配置、本地消息与卸载。四平台结果见发布流水线。Channel 热切使用 SDK 内存传输，socket 使用隔离临时 peer；这些是协议及安装验证，不是新增真实模型收信证据。下列原生验收记录保留为原组合和 default 房间的历史。
+108 local tests passed. Added fixed-version HTTPS packages, compressed/extracted SHA-256 checks, cache and four-platform release workflow. Cases included corruption/interruption, invalid manifests, cache reuse, escaping and older metadata. A fresh standalone project with no development runtime verified preview/install/idempotency, hooks/launchers, SQLite messaging/mark and removal with history. Project dotenv/preload were not loaded. Tests used synthetic sessions.
 
-## Alpha 安装包验证（2026-10-29）
+## Native socket experiment: historical dev.2 evidence
 
-`0.1.0-alpha.1` 新增独立程序、固定版本 HTTPS 安装器、下载和解压后 SHA-256 校验、版本缓存以及可复用的四平台发布流水线。核心存储、消息模型与接收适配范围保持原有约定。
+The user explicitly chose the experiment after Channel was unavailable, retaining gateway/authentication. At this revision, 100 automated tests, type checking and build passed (bundle about 0.65 MB). Isolated fake peers/keys and real temporary sockets covered exact selection, directed routing, ambiguous UUID claims, project/process-start/inode/permission/link/version checks, pre-submit failure, unknown pauses, proof isolation and removal. Passive idle verification rejected changed receivers; no real client was part of those automated checks.
 
-本机 108 项自动化测试通过，新增覆盖下载损坏、中断、错误清单、解压后校验、缓存复用、参数转义及旧安装元数据兼容。独立程序在全新项目目录和不含开发运行时的 PATH 中完成预览、安装、幂等、登记 hook、启动入口、本地 SQLite 收发及显式 mark、卸载保留历史验证。程序不加载业务项目的 .env 或 Bun preload 配置。
+### Original-session nonce: passed
 
-四种平台由 [发布流水线](https://github.com/ccsang/agentchat/actions/workflows/ci.yml) 分别执行同样检查，全部通过后才生成 Release。安装包验收使用合成身份，不向真实 agent 发通知；原生模型收信范围仍以下列独立记录为准。
+Original interactive Claude Code 2.1.312 / peerProtocol 1 on macOS arm64. Exact registered UUID, project, process start, socket ownership and instance were verified. Only peer credentials were used: no childToken, sender permission-class assertion or change to crossSessionInbound/tool permissions.
 
-## 当前版本：原生 socket 实验接收
+Probe `probe-14206641-20f3-4017-b798-4ef6fb2e8d16`, nonce `350d95bd-08fd-4a97-b521-6e7652e977bb`, request/reply sequences 11/12. Claude read and replied from its own native socket context; the CLI recorded current_socket proof tied to that instance.
 
-版本 `0.1.0-dev.2`。用户在 Channel 不可用后明确选择保留网关并开发实验适配。核心仍是一个 CLI、一个 SQLite、两张表；新增路径不需要独立收件服务或模型心跳。
+Bun's socket realpath limitation was handled by lstat plus canonical parent resolution. The observed 2.1.312 key filename hashes the published original path, not necessarily its /private/tmp alias; a third-party protocol description was not treated as a stable guarantee.
 
-完整自动化套件目前为 100 项，类型检查和构建通过，构建约 0.65 MB。socket 专项使用隔离的假 peer、真实临时 Unix socket 与模拟 key；新增覆盖明确选择、定向通知隔离、相同 UUID 的多进程歧义、不同项目、PID 起始时间、socket inode 替换、权限和符号链接、版本拒绝、提交前失败、未知写入暂停、旧证明隔离与卸载。被动空闲验证还检查原接收实例仍在，不能用替换后的进程承接旧结果。自动化不接触用户真实客户端。
+### New bidirectional loop: passed
 
-### 原会话 nonce：通过
+Nonce `28355c6b-a4ca-48b2-aed1-cf373dc1a60f`, sequences 13–17:
 
-Claude Code 2.1.312 / peerProtocol 1 的原交互 CLI 会话，保持原本地网关和认证。按准确已登记 UUID 校验本机 peer 元数据，核对所属项目、进程起始时间、socket 权限及实例。只使用 peer 凭据，没有使用 childToken 或声明发送方权限等级，没有修改 crossSessionInbound 或工具审批。
+1. Original Codex notified original Claude through the socket; Claude returned claude-ack and a separate reverse request.
+2. During its active turn, original Codex read the contiguous shared stream and returned codex-ack using its native identity, notifying Claude through the socket.
+3. Claude returned final done without notify.
+4. All five passive correlation checks passed; both agents explicitly marked pages actually read.
 
-新探针为 `probe-14206641-20f3-4017-b798-4ef6fb2e8d16`，nonce 为 `350d95bd-08fd-4a97-b521-6e7652e977bb`。它通过原生 socket 进入原会话，Claude 读取并回传，回复关联原请求；CLI 同时核对自己的原生 socket 上下文，记录 current_socket 验证。消息序号为 11、12。
+Claude-to-Codex notices retained queue. Active-turn manual consumption was not counted as another independent queue wakeup. Late queue notices were deduplicated rather than executing the request again.
 
-Bun 1.3.14 无法直接 realpathSync 一个 socket inode，已通过 lstat 最终节点并规范化父目录解决。2.1.312 的 key 名称使用元数据中发布的原始路径做哈希；本机 /tmp 与 /private/tmp 的规范化别名不同，已按实际版本核对，未把第三方协议说明视作稳定承诺。
+### Real idle acceptance: 10 minutes and one hour passed
 
-### 新双向闭环：通过
+| Check | 10 minutes | One hour, timed after the first test finished |
+| --- | --- | --- |
+| Nonce | 31554ca1-5b1b-4223-ac72-11ae6082adf5 | 85f0d9f1-ed07-4748-a2d0-6a0ce5961f93 |
+| Actual wall-clock idle | 600.060 s | 3600.056 s |
+| Request / result sequence | 18 / 19 | 20 / 21 |
+| Reply latency | 19.820 s | 16.182 s |
 
-关联 nonce 为 `28355c6b-a4ca-48b2-aed1-cf373dc1a60f`：
+Each publisher continuously checked unchanged native idle state/update timestamp and the same socket instance, with no Claude project message during the wait. It sent one request at the deadline and exited. Claude read/replied in the original session; its result notified original Codex through queue. Codex read/marked through 21 without a further notification.
 
-1. Codex 经原生 socket 通知原 Claude，后者返回 claude-ack 并另发反向请求。
-2. 原 Codex 在当前活跃回合读取连续共享消息流，使用自己的宿主身份回复 codex-ack，继续经 socket 通知 Claude。
-3. 原 Claude 读取回复并返回最终 done，最终确认不带 notify。
-4. 被动验证器五项相关性检查均为 true，关联序号 13–17；各端显式标记实际读过的连续页面。
+All five checks passed for both tests: publisher completion, actual duration, unchanged receiver, exact request and exact reply. No human renewal, fake business message, accelerated clock or model heartbeat was used. These results cover only the recorded original host/session/instance and do not enable the retired Channel.
 
-Claude 发给 Codex 的通知仍走已验证的原生 queue；当前 Codex 回合活跃时先主动读取，队列通知可能随后才进入会话，不能把暂缓的另一个通知说成单独唤醒证据。迟到通知按已读状态去重，不再执行原请求。
+## Historical Channel dev.1: real reception blocked
 
-### 真实空闲验收：10 分钟和 1 小时均通过
+82 synthetic tests covered default one-way Channel, lifecycle registration, exact launcher handshake, current-instance nonce validation, rolling limits, busy backoff, unknown pauses and host-unavailable diagnosis. Cases included MCP-before-SessionStart, simultaneous exact sessions, duplicate receivers, wrong/copied launch contexts, process death/SIGKILL, old proof isolation, preserved hooks and offline configuration. Accelerated 10-minute/hour clocks tested logic only.
 
-10 分钟测试已通过，nonce 为 `31554ca1-5b1b-4223-ac72-11ae6082adf5`。发布器核对同一个 socket 实例、原生 idle 状态及更新时间未变，期间无 Claude 项目发言；到期只发一次真实请求并退出，结果由 Claude 通知原 Codex。此次使用真实墙钟，未用加速时钟替代。
+The user restored the original Claude Code 2.1.312 session through the generated launcher. UUID binding, MCP initialization and sustained receiver process were observed with the expected launch flags. One probe was submitted: `probe-776ce768-a1d6-4060-8ae5-0e989a663dd3`, nonce `9eb5c61a-8a1a-44d0-9879-89e59eefbc09`. No native read/reply returned. It was not resent with another ID and reservations were not cleared.
 
-第一轮实际空闲间隔为 600.060 秒；请求序号 18，结果序号 19，正文与父消息匹配，结果在请求后 19.820 秒回传。发布器完成、真实间隔、原接收实例仍在、准确请求与准确回复五项核对均通过。期间原生 idle 状态及更新时间未变，没有要求用户发送续期或手动读取消息。
+The original /status reported **Channels: Configured but not active (not currently available): server:agentchat**. It also showed a custom local Anthropic endpoint/token and unavailable remote managed/organization settings. This does not establish the gateway as the sole cause or a definite administrator refusal; it does establish that MCP connected was not push reception.
 
-第二轮在第一轮结束后独立计时，nonce 为 `85f0d9f1-ed07-4748-a2d0-6a0ce5961f93`。实际空闲间隔为 3600.056 秒；请求序号 20，匹配结果序号 21，结果在请求后 16.182 秒回传。发布器期间持续核对同一个 socket 实例、原生 idle 状态及更新时间未变，未发现 Claude 项目发言；到期只提交一次请求后退出。
+The tool recorded that observed launch as blocked, retained messages and stopped further notifications without changing gateway, authentication, policy or approval. The nonce failed; real Channel idle tests never started. Socket success is separate evidence, and Alpha 5 later retired this path.
 
-Claude 在同一原生会话中自动读取请求并回传匹配结果；结果通过原生 queue 唤醒原 Codex，会话读取连续消息并显式标记至 21，没有对测试结果再发通知。发布器完成、真实间隔、原接收实例仍在、准确请求与准确回复五项核对全部通过。两次均使用真实墙钟，期间没有用户续期、假业务消息或模型心跳，完成本机当前版本组合的持续接收验收。
+## Historical initial hooks and native loop
 
-以下保留 Channel 和旧 hooks 的独立记录；Socket 成功并不使 Channel 功能限制消失，也不重发旧 Channel 探针。
+60 automated tests, type checking and build passed. Isolated fake host executables covered storage constraints, concurrent appends, idempotency, UTF-8, pagination/mark, worktree/clone boundaries, notification budgets/unknowns, hook singleton/timeout and backup/rollback/removal. SDK stdio tests did not validate a real Channel account.
 
-## Channel 修订（当前宿主仍不可用）
+| Host | Historical evidence |
+| --- | --- |
+| Codex 0.165.0-alpha.1.2, Desktop bundled CLI | Exact host CODEX_THREAD_ID, matching queue receipt, subsequent original-session consumption and native nonce reply; first response timestamp recorded. |
+| Claude Code 2.1.312 interactive CLI | Own-context enrollment, Stop asyncRewake queueing, then exact nonce read/reply after leaving the /hooks menu. |
+| Claude Channel | Synthetic SDK only at this milestone; actual failure recorded above. |
+| Linux / Windows / IDE / remote app-server | No real native-host acceptance; package/OS interfaces are not model-reception proof. |
 
-版本 `0.1.0-dev.1`。已实现默认单向 Channel、短生命周期登记 hooks、独立启动握手、准确原会话恢复入口、当前接收实例的 nonce 验证、滚动窗口限流、数据库忙退避、未知写入暂停和宿主不可用诊断。
+Claude hook nonce: `a9669a92-b6af-401c-962e-0adb3e8c7442`. Codex nonce: `09fc915b-b2c7-4268-882c-0c5c64e80ab7`. A long implementation turn left the first queued probe waiting more than 30 minutes, exposing an incorrect proof/notification-TTL coupling. The fix retained exact message/session/nonce validation without expiring valid queued proof or refreshing old evidence on repeats.
 
-当前自动化套件为 82 项，运行类型检查、完整测试及构建。覆盖初版存储与 Codex 通知行为，并新增：
+An Intel Git on the local PATH sometimes timed out under Bun while native system Git worked. Failure no longer silently selected a non-Git room; regression coverage was added and the accidental temporary room archived, preserving the original database.
 
-- MCP 先于 SessionStart 初始化时等待准确绑定，不预留未绑定消息。
-- 两个同时在线的 Claude 会话各收自己的定向通知，重复接收器拒绝接管。
-- 错误会话、不同项目、复制到另一原生进程的有效配置、复制的启动上下文、已结束启动、SessionEnd、卸载及 SIGKILL。
-- 旧 Hook 证据、前一 Channel 实例证据和当前验证相互隔离。
-- 滚动窗口恢复、重启后保留预留、临时 SQLite 忙和提交结果不确定。
-- 移除自己的旧 Stop hooks，保留用户 hooks；Bun 不在 PATH 时入口仍可运行。
-- 原生宿主报告不可用后明确显示 blocked，不把连接或迟到的 nonce 当作接通。
-
-加速时钟模拟空闲 10 分钟和 1 小时，只证明逻辑无总接收期限，不等同于真实长期验收。显式墙钟发布器和被动核对入口已准备；默认测试不向真实客户端发送通知。
-
-### 本机真实 Channel 结果：未接通
-
-用户已退出并通过生成的入口恢复原 Claude Code 2.1.312 会话。已观察到：准确 session_id 绑定成功，MCP 初始化完成，接收进程持续运行；宿主实际启动参数包含开发 Channel 标志和准确恢复参数。
-
-仅发出一次真实探针：`probe-776ce768-a1d6-4060-8ae5-0e989a663dd3`，nonce 为 `9eb5c61a-8a1a-44d0-9879-89e59eefbc09`。Channel 已预留并写出通知，但原会话没有读取或回传该 nonce。没有换 ID 重发或清空预留。
-
-用户从原生 `/status` 提供了明确结果：
-
-> Channels: Configured but not active (not currently available): server:agentchat
-
-同一状态页面显示使用自定义本地 Anthropic API 地址与 `ANTHROPIC_AUTH_TOKEN`，远程 managed settings 和组织策略未获取。仅凭这些事实不能断言网关就是唯一原因，也不能把它归类为管理员明确拒绝；可以确定当前宿主组合未启用 Channels，MCP connected 不代表可推送。
-
-工具据这次用户观察登记当前启动为 blocked，停止后续通知并保留消息。没有修改用户的网关、认证、组织策略、审批设置或宿主功能开关，也没有切回限时 hooks。
-
-此处记录的 Channel 修订阶段，nonce **未通过**，该适配的 10 分钟和 1 小时真实空闲测试 **未启动**。后续用户选择的原生 socket 实验及其验收记录见本文开头；这些结果不代表当前宿主已启用 Channels。
-
-以下是旧版已完成的 hooks 验证，保留作历史记录，不能用于证明新版 Channel 接通。
-
-## 初版 hooks 路径的自动化验证（历史）
-
-运行 `bun run check`、`bun run build`、`bun test tests`。
-
-完整自动化测试套件共 60 项，通过类型检查与构建。包含真实联调发现的长回合探针回传边界及其回归检查。
-
-测试使用隔离的临时目录和伪造宿主可执行文件；不会向用户真实会话发消息。覆盖两张表的约束、并发写入、幂等、UTF-8 限额、分页、显式阅读游标、worktree/clone 项目边界、预算、通知不确定状态、hook 单例/超时、安装备份/回滚/卸载及单向 MCP 初始化。
-
-MCP 协议测试仅证明消息能通过 SDK stdio，并未证明真实 Claude 账号已启用 Channels。
-
-## 初版原生会话验证（历史）
-
-| 组合 | 证据与当前状态 |
-|---|---|
-| Codex 0.165.0-alpha.1.2，Desktop 自带 CLI | 工具环境取得准确 CODEX_THREAD_ID；queue 返回匹配目标 thread 的消息 ID。实现轮次结束后，通知确实进入同一原会话，并在该宿主身份下回传 nonce；doctor 记录 verified 及首次回信时间。 |
-| Claude Code 2.1.312，交互 CLI | 从自身上下文加入，Stop asyncRewake 监听取得通知并放入原会话队列；退出 /hooks 菜单后，原会话读取并回传正确 nonce。 |
-| Claude Channels | 仅通过模拟 MCP 客户端验证；真实账号/组织策略和宿主环境继承尚未验收。 |
-| Linux / Windows / IDE / 远程 app-server | 本次未进行真实宿主验收。自动接收首版限定 macOS/Linux 系统接口，Windows 不报告已支持。 |
-
-Claude hook 探针 nonce 为 `a9669a92-b6af-401c-962e-0adb3e8c7442`，实际回传关联到原请求；消息、原生会话及通知批次详情保存在本机私有运行目录，不提交完整聊天记录。
-
-Codex nonce 为 `09fc915b-b2c7-4268-882c-0c5c64e80ab7`。长实现轮次让最早探针在原生队列中等待超过 30 分钟，暴露了把探针校验误绑到通知 TTL 的问题。修复后仍校验原消息、原生会话和 nonce，并保留首次回信时间；重复发送不新建消息、不再次通知、不刷新证据时间。
-
-真实联调中发现：本机 PATH 中的 Intel Git 在 Bun 子进程中可能超时，系统原生 Git 正常。已修复失败时错误选择非 Git 房间的行为，并加入回归测试；未经初始化的临时错误目录已归档，原消息库保持原位。
-
-## 初版 hooks 路径双向闭环（历史）
-
-`bun run test:native` 只在用户明确授权、Claude 已有活动接收器时运行。它不会创建新客户端或业务任务。`bun run verify:native` 只读取现有证据，不发通知。
-
-已完成完整闭环，关联 nonce 为 `ba6ab49f-24ba-47ca-8713-397fc44636e4`：
-
-1. Codex 原会话发送定向请求，Claude Stop asyncRewake 监听触发。
-2. Claude 原会话读取请求，返回 `claude-ack`，并单独发送反向请求。
-3. Codex 结束实现轮次，原生队列通知进入本会话；读取完整连续消息后，在同一宿主身份下回复 `codex-ack`。
-4. Claude 再次通过活动监听接收回信，返回 `done`，最终确认不带 notify。
-5. 被动验证器五个步骤全部为 true；Codex 读取并显式标记连续页面。后续重复通知不重复执行。
-
-关联消息序号为 4、5、6、8、9。核对了原生通知、精确会话身份、随机值和消息回复关系，未仅以数据库有记录判断自动接收。
+The original hook-based full loop used nonce `ba6ab49f-24ba-47ca-8713-397fc44636e4`, sequences 4, 5, 6, 8, 9. Original Codex request → Claude hook wake/read/claude-ack and reverse request → Codex queue consumption after ending the turn/codex-ack → Claude done without notify. All five passive correlation checks passed with actual native identities, random value and reply relationships. Later duplicate notices did not repeat work.
