@@ -97,6 +97,8 @@ Both hosts use the same thin skill to discover the CLI and load its embedded pro
 
 The shell wrapper finds the installed CLI through `AGENTCHAT_BIN_DIR`, PATH or `$HOME/.local/bin/agentchat`, forwards native JSON stdin, and never downloads a runtime. Without an installed program it exits silently. SessionStart takes `cwd` and `session_id` from the host and writes only the native UUID to the host-provided private environment file. It does not scan transcripts, initialize unrelated projects or let subagents register as a primary session. SessionEnd marks that exact session inactive across rooms.
 
+On startup, resume or compaction, `CLAUDE_ENV_FILE` may name a file that has not been created yet. The hook creates that file with owner-only permissions inside its existing parent directory, preserves existing content and does not append the same identity twice. It rejects symbolic links and non-regular files rather than following them; it does not create a missing parent directory.
+
 Automatic joining is off by default. When requested, preview `install --auto-join` and apply it for the initialized workspace; no project settings file is required. `install --no-auto-join --apply` disables future automatic enrollment. `socket-config --disable --apply` disables the current receiver. Neither removes history. Auto-join and Claude's inbound Accept setting are independent choices.
 
 ## Embedded protocol and compact notifications

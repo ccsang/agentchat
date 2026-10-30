@@ -80,6 +80,8 @@ codex plugin add agentchat@agentchat
 
 hook 包装脚本依次检查 AGENTCHAT_BIN_DIR、PATH、`$HOME/.local/bin/agentchat`，用 sh 调用已安装程序，不下载或安装程序、不依赖外部 Bun/Node。程序尚未安装时静默退出。SessionStart 使用宿主 JSON 中的 cwd 和 session_id，只向宿主提供的私有环境文件添加原生 UUID；不会扫描聊天记录或创建无关项目状态，子 agent 不冒充主会话。SessionEnd 清理准确会话的接收状态。
 
+启动、恢复或 compact 后，`CLAUDE_ENV_FILE` 指向的文件可能尚未创建。hook 会在已有的父目录内以仅属主可读写的权限创建该文件，保留原有内容，并避免重复追加相同身份。它拒绝符号链接和非普通文件，不会跟随链接写入，也不会创建缺失的父目录。
+
 已初始化项目要让后续主会话自动加入，可在该需求范围内预览 `install --auto-join` 并追加 --apply；这仍只写私有配置。`install --no-auto-join --apply` 停止未来自动登记，`socket-config --disable --apply` 停用当前接收。关闭 autoJoin 不会移除已有成员或消息。
 
 skills list 返回规范列表，skills get [agentchat] 返回 Markdown，--json 返回名称、CLI 版本、正文和 SHA-256。读取不需要项目、原生身份或网络，不初始化房间。同一入口与版本已加载的规范复用；首次使用、切换或升级入口、上下文缺失时再读取，不因每条通知重新加载。不能读取全局新规范后继续执行旧项目程序。

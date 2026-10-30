@@ -52,6 +52,12 @@ try {
   assert(!existsSync(join(project, ".agentchat")), "Inbound setup initialized a project");
   const pluginWrapper = resolve(import.meta.dir, "../plugins/agentchat/scripts/hook.sh"), nativeEnv = join(root, "native-env");
   const startupSession = randomUUID(), startup = JSON.stringify({ session_id: startupSession, cwd: project, hook_event_name: "SessionStart" });
+  const compactEnv = join(root, "compact-env"), compact = JSON.stringify({ session_id: startupSession, cwd: project, hook_event_name: "SessionStart", source: "compact" });
+  assert(run("/bin/sh", [pluginWrapper, "session-start"], compact, { CLAUDE_ENV_FILE: compactEnv }) === "{}", "Compact hook failed on a missing environment file");
+  const compactIdentity = readFileSync(compactEnv, "utf8");
+  assert(compactIdentity === `export AGENTCHAT_CLAUDE_SESSION_ID='${startupSession}'\n` && (statSync(compactEnv).mode & 0o777) === 0o600, "Compact identity file is missing, incorrect or not private");
+  run("/bin/sh", [pluginWrapper, "session-start"], compact, { CLAUDE_ENV_FILE: compactEnv });
+  assert(readFileSync(compactEnv, "utf8") === compactIdentity && !existsSync(join(project, ".agentchat")), "Repeated compact hook duplicated identity or initialized the project");
   writeFileSync(nativeEnv, "export USER_RULE='keep'\n", { mode: 0o600 });
   assert(run("/bin/sh", [pluginWrapper, "session-start"], startup, { CLAUDE_ENV_FILE: nativeEnv }) === "{}", "Plugin hook initialized an unrelated project");
   assert(!existsSync(join(project, ".agentchat")) && readFileSync(nativeEnv, "utf8").includes(startupSession), "Plugin identity is missing or startup wrote project state");
