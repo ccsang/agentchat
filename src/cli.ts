@@ -15,6 +15,8 @@ import { automaticSocket, configureSocket } from "./socket-state.ts";
 import { createRoom, listRooms, resolveRoom, roomExists, roomName, selectRoom, withRoomSelection } from "./rooms.ts";
 import { setupProgram } from "./program.ts";
 import { getSkill, listSkills } from "./skills.ts";
+import { applyClaudeInbound, claudeInboundStatus, INBOUND_CHOICES, planClaudeInbound, previewClaudeInbound } from "./claude-inbound.ts";
+import type { InboundChoice } from "./claude-inbound.ts";
 
 const HELP = `AgentChat ${version}
 Local project chat for coding agents. Output is JSON except help, version and skills get.
@@ -34,6 +36,8 @@ Daily commands (project and native identity are discovered automatically):
   read [--new | --after SEQ | --id ID | --mark SEQ] [--limit 20]
 
 Setup / diagnostics:
+  claude-inbound [accept|hold|refuse|default] [--apply]
+                                     Inspect/preview Claude user-level inbound policy; explicit apply backs up settings.
   install [--instructions] [--hooks] [--apply] [--auto-join | --no-auto-join] [--budget N] [--window-seconds N] [--codex-bin PATH]
                                      Default: local runtime only. Optional flags explicitly enable project integration.
   uninstall [--instructions] [--hooks] [--apply]  Remove selected integration, or disable all; keep history.
@@ -112,6 +116,17 @@ export async function runCli(args: readonly string[]): Promise<number> {
       }
       return 0;
     }
+    if (command === "claude-inbound") {
+      requireThat(p.length <= 2 && Object.keys(v).every(key => ["apply", "json"].includes(key)), "E_USAGE", "claude-inbound takes only a policy and --apply; it changes user settings, not a project or room");
+      requireThat(!v.apply || p.length === 2, "E_USAGE", "Choose accept, hold, refuse or default before --apply");
+      if (p.length === 1) console.log(JSON.stringify(claudeInboundStatus()));
+      else {
+        requireThat(INBOUND_CHOICES.includes(p[1] as InboundChoice), "E_USAGE", "Use claude-inbound [accept|hold|refuse|default] [--apply]");
+        const plan = planClaudeInbound(p[1] as InboundChoice);
+        console.log(JSON.stringify(v.apply ? applyClaudeInbound(plan) : previewClaudeInbound(plan)));
+      }
+      return 0;
+    }
     requireThat(p.length === (command === "room" ? p[1] === "create" || p[1] === "use" ? 3 : 2 : hook || command === "notify" || command === "launch" ? 2 : 1), "E_USAGE", "Unexpected positional arguments");
     const specific: Record<string, string[]> = {
       join: ["name", "generic"], room: [], members: [], send: ["to", "reply-to", "notify", "id", "text", "stdin"],
@@ -153,7 +168,12 @@ export async function runCli(args: readonly string[]): Promise<number> {
       try { identity = identify(); } catch (error) { identity = errorResult(error); }
       let member: Member | null = null, diagnostic: unknown = null;
       try { store = new Store(project.room, { readonly: true }); member = v.as ? store.member(v.as) : store.actor(identify()); } catch (error) { diagnostic = errorResult(error); }
-      result = { ok: true, project, identity, joined: !!member, member, diagnostic, reception: member ? receiver(project, member) : null };
+      let claudeInbound: unknown;
+      if (member?.runtime === "claude") {
+        try { claudeInbound = claudeInboundStatus(); } catch (error) { claudeInbound = errorResult(error); }
+      }
+      result = { ok: true, project, identity, joined: !!member, member, diagnostic, reception: member ? receiver(project, member) : null,
+        ...(claudeInbound ? { claude_inbound: claudeInbound } : {}) };
     } else {
       requireThat(["join", "members", "send", "read", "notify", "probe", "socket-config"].includes(command ?? ""), "E_USAGE", "Unknown command; use --help");
       if (command === "join") {

@@ -1,133 +1,92 @@
-# 实施顺序与验收
+# Implementation and acceptance
 
+English | [Chinese translation](zh-CN/implementation-plan.md)
 
-## Alpha 7：精简通知
+Use the current self-onboarding design. Historical milestones below record completed work; Channel and timed hooks are retired and must not be restored as setup instructions. Native model tests remain separate from synthetic/unit/package checks.
 
-- [x] Codex 与 Claude 共用三行提醒，仅保留来源、消息 ID 和准确读取参数数组。
-- [x] 移除 Base64 路由、重复字段、文档链接和反复发送的完整规则。
-- [x] 薄 skill 兼容新旧通知；规范按入口/版本复用，缺失或变化才重读。
-- [x] 回归覆盖满批消息 ID、正文不进入通知、带特殊字符的路径、切房后从其他 cwd 读取/回复/连续 mark。
-- [x] 独立程序在无外部 Bun/Node 环境通过假 queue 捕获并执行精简通知。
+## Alpha 8: Claude inbound setup and English documentation
 
-## Alpha 6：修复并发打开数据库的日志检查竞态
+- [x] Add project/identity-independent user-level `claude-inbound` inspection and explicit preview/apply for accept, hold, refuse and default.
+- [x] Back up existing settings, preserve unrelated values/modes, reject unsafe/malformed configuration, keep repeated application idempotent and reject stale in-memory plans.
+- [x] Display the configured policy at Claude startup in initialized workspaces. Preserve later hold/refuse choices; keep unrelated projects silent.
+- [x] Distinguish the configured user value, effective native policy and model-processing evidence in doctor, startup output and onboarding.
+- [x] Document assisted setup before startup, per-launch/UI alternatives, setting scope/precedence, reversal and old held messages.
+- [x] Make primary documents and generated instruction blocks English; retain Chinese translations under docs/zh-CN.
+- [x] Extend standalone verification to inbound setup, startup output and English instruction blocks; require all four native targets before publication.
 
-- [x] Alpha 5 发布检查失败后保留原标签，不发布失败的安装包。
-- [x] 确定性复现 journal 在文件检查期间消失，以及悬空 sidecar 链接被跳过的问题。
-- [x] 只容忍 SQLite 临时文件缺失，保留权限与符号链接拒绝，并输出并发子进程错误。
-- [x] 新预发布版本交付 Alpha 5 功能及该修复；127 项测试和独立程序验收。
+## Alpha 7: compact notifications
 
-## Alpha 5：自动加载插件 hooks，移除 Channel
+- [x] Share a three-line notice across Codex and Claude: provenance, message IDs and exact read argv.
+- [x] Remove Base64 routing, duplicate fields, links and repeated full rules.
+- [x] Support new/legacy notification discovery and reuse rules by actual executable/version.
+- [x] Cover full batches, no business body in notices, special-character paths and late named-room reads/replies/contiguous marks from another cwd after switching rooms.
+- [x] Verify the compiled executable with a fake queue and no external Bun/Node.
 
-- [x] Claude 插件声明 SessionStart/SessionEnd，sh 包装脚本自动定位 CLI、转发原生 stdin；Codex 不加载此 hooks 文件。
-- [x] hooks 只提供宿主私有身份；仅已初始化工作区且 autoJoin 开启时自动登记和绑定，无关项目/子 agent 不初始化。
-- [x] join 自动绑定准确、版本受支持的 socket；显式 disable 保持，实例变化要求权威 SessionStart 或明确重绑。
-- [x] SessionEnd 立即停用准确会话的投递，消息不消失。
-- [x] 移除 Channel 运行器、握手、专用启动流程和 MCP SDK；旧命令 E_RETIRED，旧自有私有入口报废。
-- [x] setupVersion 4 迁移，保留消息、游标、预留与 unknown 暂停，默认不碰业务项目文件。
-- [x] 薄 skill 最低 CLI Alpha 5，内置规范与安装说明移除旧 Channel 流程。
-- [x] 隔离 peer、插件 hook 包装及独立程序验证；本轮不向真实模型会话发通知，不重复长期空闲测试。
+## Alpha 6: concurrent SQLite sidecar inspection
 
-以下 Alpha 4 及更早章节为历史验收清单，Channel 入口由本节覆盖。发布的四平台与公开下载结果见 verification.md 和发布流水线。
+- [x] Preserve Alpha 5's failed tag and do not publish its packages.
+- [x] Reproduce a journal disappearing between exists/lstat and a dangling sidecar link being skipped.
+- [x] Tolerate only normal missing-file races, preserve permission/link rejection and include failed worker stderr.
+- [x] Deliver Alpha 5 functionality plus the fix in a new prerelease, with 127 local tests and standalone verification.
 
-## Alpha 4：插件薄 skill 与 CLI 规范
+## Alpha 5: plugin lifecycle hooks and Channel retirement
 
-- [x] 一份共享薄 skill，Claude/Codex marketplace 和便携/兼容插件描述。
-- [x] skills list / skills get [agentchat] / --json，无项目/身份的只读发现与规范输出。
-- [x] 完整规范编译进实际 CLI，输出版本和内容哈希；切换可执行文件必须重读。
-- [x] 文档明确首次安装、旧入口升级、插件与 CLI 的独立更新及用户范围。
-- [x] 139 项自动化测试；独立程序、宿主插件识别与公开下载结果见 verification.md 和发布流水线。
+- [x] Claude declares short SessionStart/SessionEnd hooks; a sh wrapper locates the CLI and forwards native stdin. Codex does not load these hooks.
+- [x] Persist only native identity in the host-private environment. Auto-enroll only initialized workspaces with autoJoin enabled, never unrelated projects/worktrees or subagents.
+- [x] Bind the exact supported socket on join, preserve disablement and require authoritative new-process SessionStart or explicit rebind after replacement.
+- [x] SessionEnd stops new notifications to the exact session; preserve history.
+- [x] Remove Channel/MCP/handshake/launcher runtime. Old commands return E_RETIRED; retire owned private launchers only.
+- [x] Migrate setupVersion 4 without resetting cursors, reservations or unknown pauses, or touching default business project files.
+- [x] Update thin skill, protocol and docs; project-local hooks remain an explicit compatibility option.
+- [x] Validate with isolated peers/wrappers/standalone binaries, without notifying real models or repeating idle tests.
 
-## Alpha 3：默认加入不改项目文件
+## Earlier release milestones
 
-- [x] 默认 join / room use / install 只准备本地运行状态，不读取指令、hooks 或 Git exclude。
-- [x] --instructions 与 --hooks 独立预览、启用和移除；部分卸载保留运行能力。
-- [x] setupVersion 3 按工作区记录可选集成，旧版本只升级私有入口，不自动清理旧文件。
-- [x] Channel 明确要求可选 hooks，移除后停止；通知自带 CLI 路由，不依赖业务项目文档。
-- [x] 回归覆盖已提交文件保持 Git 干净、无效配置、指令符号链接、旧块和不同 worktree 的集成选择。
-- [x] 135 项测试、类型检查、构建及本机独立程序验收；四平台和公开下载结果另行记录。
+| Milestone | Completed behavior and acceptance |
+| --- | --- |
+| Alpha 4 | Shared thin skill, host/portable manifests, compiled skills list/get/JSON, exact executable/version/hash checks, 139 local tests and isolated host plugin installs. |
+| Alpha 3 | Runtime-only join/room use/install; separate preview/apply/removal for instruction blocks and project hooks; worktree-specific integration choices; 135 local tests. |
+| Alpha 2 | One global program, self-initializing projects and per-session named rooms. Preserve default DB, cross-room pauses and exact-room proofs; 126 local tests. |
+| Alpha 1 | Standalone runtime packages, fixed-version HTTPS installer, checksums, cache and four-platform release workflow; 108 local tests. |
+| Initial core | Native identity discovery, two SQLite tables, four commands, deterministic install, exact-session hooks/Codex queue evidence and bidirectional loop. |
 
-## Alpha 2：程序、项目、聊天室分离
+## Native socket acceptance: completed for the recorded original session
 
-- [x] 全局程序安装入口，不隐式初始化所在目录。
-- [x] 首次 join 初始化项目，后续会话幂等复用；工作区配置与共享房间分离。
-- [x] room create/list/current/use，按原生会话选择，命名房间数据与游标隔离。
-- [x] 单次 --room 路由不改选择；通知给出确切房间，旧通知不重做。
-- [x] 单 Channel 跟随会话选择，socket 端点复用，证明按房间隔离，未知暂停跨房间保留。
-- [x] 默认旧消息库原位保留；旧活跃 Channel 切房前要求更新原会话入口。
-- [x] 126 项自动化测试及本机独立程序验证；四平台构建和安装验收由发布流水线记录。
+- [x] Inspect 2.1.312 metadata, owner permissions, peer credentials and NDJSON without changing gateway, authentication or inbound policy.
+- [x] Require exact UUID/project/process-start/socket instance, ambiguity rejection and version lock.
+- [x] Separate submission from processing; no reservation before a connection failure, and no replay/fallback after an unknown write.
+- [x] Receive a fresh nonce from the original socket instance and complete a new Codex ↔ Claude round trip.
+- [x] Pass a real 10-minute idle test without human renewal.
+- [x] After that completes, independently pass a real one-hour idle test in the original session.
 
-## 初版基线状态（历史）
+See [verification.md](verification.md) for versions, nonces, durations and boundaries. These results do not validate a new instance or the retired Channel path.
 
-- [x] 初始化私有仓库对应的本地项目骨架。
-- [x] 固化最终设计与 agent 自助接入约定。
-- [x] 实施 SQLite、四个命令、项目/会话发现及确定性安装器。
-- [x] 实施 Codex queue、Claude hook 与可选单向 Channel。
-- [x] 验证 Claude 原会话 hook nonce 回传；Codex 提交通知已拿到准确 queue 回执。
-- [x] Codex 原会话下一轮消费队列，并完成双向闭环验收。
+## Historical Channel milestone: blocked, then retired
 
-## Claude 持续接收修订
+The Channel implementation included exact startup binding, leases, rolling limits, busy backoff and unknown-submission pauses. Its 82 synthetic tests passed, but the actual host reported **Configured but not active (not currently available)**. No correct native nonce returned; real Channel 10-minute/one-hour tests never started. The user chose the separately tested socket path, and Alpha 5 removed Channel runtime.
 
-- [x] 将单向 Channel 提升为默认接收方式，移除管理的 Stop 长监听。
-- [x] 启动入口、真实 SessionStart 与 Channel 的独立启动握手；不依赖 MCP 继承 hook UUID。
-- [x] 当前接收实例的 nonce 验证，隔离旧 Hook 和旧进程证据。
-- [x] 持久化滚动窗口限流、状态诊断、数据库忙退避和未知写入暂停。
-- [x] 模拟 MCP、进程崩溃、升级迁移、会话隔离与加速空闲测试。
-- [ ] 真实账号的 Channel nonce 回传：当前宿主显示 not currently available，MCP 连接成功但未回传，已记录 blocked。
-- [ ] 不经用户续期，空闲 10 分钟后在原会话回传。
-- [ ] 第一轮结束后，再空闲 1 小时于原会话回传。
+## Development gates
 
-已实现能力和真实宿主验证边界另见 verification.md。消息落库、模拟宿主测试和真实原会话回传分别记录。
+### Gate 0: native host entry
 
-## 原生 socket 实验修订（用户明确选择）
+Discover identity in the actual Codex/Claude tool environment, not only a user terminal. Inspect exact queue/socket support and host inbound policy. Real probes require the user's integration-test scope and fresh correlated replies. Files, registrations, successful writes and synthetic peers do not complete this gate.
 
-- [x] 核对 2.1.312 实际元数据、权限、peer 凭据和 NDJSON 协议；不改网关或宿主策略。
-- [x] 显式选择、唯一准确会话发现、PID/起始时间/socket 实例校验和版本锁定。
-- [x] 提交与模型处理分离、连接失败不预留、未知写入暂停、旧通知不换通道重发。
-- [x] 当前 socket 实例的真实 nonce 回传。
-- [x] 原 Codex ↔ 原 Claude 的新双向请求/回复闭环。
-- [x] 真实空闲 10 分钟，正确结果回传，未使用用户续期。
-- [x] 上一轮结束后再真实空闲 1 小时，原会话回传匹配结果并通知原 Codex 核对。
+### Gate 1: communication core
 
-Socket 结果不能填作 Channel 验收通过；当前 Channel 的宿主限制仍保留。实验版本和权限规则详见 experimental-socket.md。
+Verify SQLite constraints, concurrent appends, UTF-8 limits, foreign keys, stable-ID conflicts, pagination, explicit contiguous marks, wrong-directory behavior and worktree/clone boundaries. Keep transactions short and external calls outside them.
 
-## Gate 0：先验证自助接入的关键假设
+### Gate 2: deterministic onboarding
 
-在准确的 Codex、Claude 原会话中，通过宿主提供的上下文取得身份。确认真实 agent 的工具执行环境可以读写预期聊天室目录，不能只在用户终端中验证。
+Discover the project/native session without guessing. Default join writes local runtime state only. Explicit integrations and user-level settings have scoped previews, backups, idempotency, preserved content and conflict checks. State accurately when automatic reception is not verified.
 
-Codex 检查 CODEX_THREAD_ID 和 queue 的客户端组合；Claude 检查 SessionStart 的 session_id、启动握手、Channel 实际启用、忙闲切换、接收唯一性及退出清理。
+### Gate 3: thin notification adapters
 
-真实通知探针在相应用户授权范围内执行，并记录版本、目标原会话、随机 nonce 和回传证据。安装配置存在、stdout 写出或 queue 返回成功均不足以完成本阶段。
+Check exact native endpoints, reserve short batches and submit outside transactions. Cover process death, acceptance with lost reply, simultaneous senders, replaced receivers, persistent limits and unknown pauses. Never turn an ambiguous attempt into another send.
 
-先通过原会话 Channel 探针，再进行真实长期空闲验收。受限组合报告阻塞，不通过新建 agent、模拟键盘或放宽全部权限绕过。
+### Gate 4: real collaboration
 
-## Gate 1：通信核心
+Begin with natural-language joining; avoid user-carried IDs/paths and replacement clients. Test both directions, exact-session/project separation and persistence across restarts. A useful trial has one agent modify a specific commit and another perform a read-only review, with actual test results and correlated replies.
 
-实现项目发现、两张表、四个命令、准确会话幂等登记、精确成员解析、回复关联、发送 ID 幂等和显式阅读游标。
+## Checks for code changes
 
-验收涵盖多进程并发追加、UTF-8 字节限额、外键/唯一约束、重复发送冲突、分页不跳过、普通读取不写入、错误目录不自动新建房间、worktree 共用与不同 clone 隔离。
-
-## Gate 2：确定性的自助接入
-
-实现预检/安装程序和无参数 join；解析可信宿主上下文，不猜最近会话。不要求用户填写 UUID 或记忆通知命令。
-
-配置写入使用自己的管理块，覆盖重复安装、已有用户内容、备份、卸载及失败恢复。普通业务仓库尚未启用时不假装已经接通。
-
-## Gate 3：薄通知适配器
-
-Codex 在发送后直接通知；Claude 使用 Gate 0 已验证的单向 Channel，hook 只登记和清理。通知只包含确定性本地元信息和消息 ID。
-
-复用短事务批次预留、合并、预算和间隔控制。故障注入覆盖预留后崩溃、宿主受理后回执丢失、并发通知进程、关闭客户端、旧实例证据隔离及限流恢复。保留消息，不自动换通道重发。
-
-## Gate 4：真实协作闭环
-
-从自然语言“把自己加入当前项目协作”开始，除必要宿主交互外不手动搬运参数或启动桥。
-
-分别完成 Codex → Claude → Codex 与反向闭环，测试同项目多个会话不误投、不同项目不串流、窗口内已消耗通知预算在重启后保留。
-
-首轮采用一方修改、另一方只读审查，记录精确 commit、实际测试和最终回复。数据库有消息不等于自动协作完成。
-
-## 每次变更的检查
-
-当前骨架运行 `bun run check`、`bun run build`，并检查 CLI 帮助、版本与待实现命令的失败行为。
-
-后续按实现补充有意义的存储、并发、项目发现与异常恢复测试；真实宿主探针独立运行，不能混入默认测试或标记为模拟测试已覆盖。
+Run `bun run check`, appropriate tests and `bun run build`. Standalone/release changes also require native package verification. Broaden checks when a new failure or unresolved concern warrants it. Real model tests and idle publishers are explicit separate commands, never ordinary unit tests.
