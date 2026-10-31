@@ -7,8 +7,8 @@ import { policy, saveState, sessionPath, state, uninstalled } from "./runtime.ts
 import type { SessionState } from "./runtime.ts";
 import { readJson } from "./files.ts";
 import { requireThat } from "./errors.ts";
-import type { Project } from "./types.ts";
-import { listRooms, resolveRoom } from "./rooms.ts";
+import type { Member, Project } from "./types.ts";
+import { listRooms, resolveRoom, roomExists, roomName } from "./rooms.ts";
 import { installation, integrationSettings } from "./workspace.ts";
 import { automaticSocket } from "./socket-state.ts";
 import { standalone } from "./executable.ts";
@@ -48,14 +48,23 @@ export function registerHook(project: Project, input: HookInput, env: NodeJS.Pro
   if (!plugin) persistIdentity(project, session, env);
   saveState(project, { ...readJson<SessionState>(sessionPath(project, session)), session, active: true });
   let reception: Record<string, unknown> | undefined;
-  if (policy(project).autoJoin) {
-    const selected = resolveRoom(project, undefined, { runtime: "claude", session });
-    const store = new Store(selected.room, { create: true });
+  const identity = { runtime: "claude" as const, session }, autoJoin = policy(project).autoJoin;
+  const selected = resolveRoom(project, undefined, identity);
+  // Resuming an exact existing member is independent of enrolling a new session.
+  // With auto-join off, inspect only an existing room and never create members/data.
+  if (autoJoin || roomExists(selected)) {
+    const store = new Store(selected.room, autoJoin ? { create: true } : { readonly: true });
     try {
-      const member = store.join({ runtime: "claude", session });
-      reception = automaticSocket(selected, member, env, true);
-      saveState(selected, { ...state(selected, member), session, active: true, memberId: member.id,
-        error: reception.state === "unavailable" ? { reason: String(reception.reason), at: Date.now() } : undefined });
+      let member: Member | undefined;
+      try { member = store.actor(identity); }
+      catch (error) { if ((error as { code?: string }).code !== "E_NOT_JOINED") throw error; }
+      const existing = !!member;
+      if (!member && autoJoin) member = store.join(identity);
+      if (member) {
+        reception = { ...automaticSocket(selected, member, env, true), membership: existing ? "existing" : "created", room: roomName(selected), member_id: member.id };
+        saveState(selected, { ...state(selected, member), session, active: true, memberId: member.id,
+          error: reception.state === "unavailable" ? { reason: String(reception.reason), at: Date.now() } : undefined });
+      }
     } finally { store.close(); }
   }
   // A newly updated plugin may run before this project's pinned entry is upgraded.

@@ -2,7 +2,7 @@
 
 # AgentChat Lite v0.1 设计基线
 
-当前实现以最后的 Alpha 9 修订为准：Claude 插件自动加载生命周期 hooks，原生 socket 为唯一 Claude 接收路径，Channel 章节仅作历史设计。
+当前实现以最后的 Alpha 10 修订为准：Claude 插件自动加载生命周期 hooks，原生 socket 为唯一 Claude 接收路径，Channel 章节仅作历史设计。
 
 本设计归纳自“设计本地通信方案”对话。以“agent 自助接入”和“Claude 持续接收”的修订覆盖此前手动接入及限时 hook 接收步骤；重型 AgentBus 方案和要求用户维持 Codex 轮询桥的版本不作为实现基线。
 
@@ -284,3 +284,7 @@ Alpha 5 标签的 Linux arm64 并发写入检查出现一个子进程退出，�
 启动、恢复和 compact 的宿主环境文件可能尚未创建。仅接受绝对路径，规范化已有父目录，再用 O_RDWR/O_APPEND/O_CREAT/O_NOFOLLOW/O_NONBLOCK 打开目标，新文件 0600。对打开的描述符检查普通文件及用户所有权，保留内容、补齐必要换行、重复执行不重复追加身份，finally 关闭。拒绝链接、非普通文件和缺失父目录，不初始化无关项目。
 
 全局程序升级后需显式刷新旧项目 JS bundle/固定入口；已有托管项目 hooks 若仍指向旧程序，也要按明确范围更新。插件包装脚本不变，插件版本可继续使用 Alpha 8。模拟 compact 输入属于配置与执行检查，不代表真实模型收信。
+
+## 20. 已加入会话恢复独立于新会话注册（Alpha 10）
+
+SessionStart 在已初始化工作区按所选房间、准确 runtime/UUID 恢复已有成员；autoJoin=false 时只读查询，不新建房间或成员。保留成员名、ID、游标和选房，仅恢复当前房间并复用原生 PID/版本重绑校验。不覆盖停用或卸载，不重置预算、预留及暂停，不重用旧实例证明，不发通知。新 UUID 仍需明确 join 或 autoJoin，不能根据同名接管；禁止伪造真实会话的 hook 输入。

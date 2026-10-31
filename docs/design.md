@@ -2,7 +2,7 @@
 
 English | [Chinese translation](zh-CN/design.md)
 
-This is the current agent-driven onboarding design, including the Alpha 9 hook environment-file fix. Historical Channel and timed Stop-hook approaches are recorded at the end; they are not supported setup instructions. Implementation and real-host evidence are distinguished in [verification.md](verification.md).
+This is the current agent-driven onboarding design, including the Alpha 10 existing-session restoration fix. Historical Channel and timed Stop-hook approaches are recorded at the end; they are not supported setup instructions. Implementation and real-host evidence are distinguished in [verification.md](verification.md).
 
 ## 1. Product scope and reliability
 
@@ -121,7 +121,7 @@ Both repository marketplaces point to `plugins/agentchat`. One thin skill discov
 
 Claude's manifest alone names `hooks/claude-hooks.json`, containing SessionStart/SessionEnd. Avoid a default `hooks/hooks.json` that Codex could discover. The sh wrapper locates an installed program and forwards stdin without downloads, external Bun/Node, polling or model calls.
 
-SessionStart uses real `cwd`/`session_id`, persists the UUID only in the host-provided private `CLAUDE_ENV_FILE`, and registers/binds only a valid initialized workspace with autoJoin enabled. Unrelated projects, uninitialized worktrees and subagents never enroll. `agent_type` alone may be a named primary agent; `agent_id` identifies a child. SessionEnd marks the exact session inactive across rooms before process exit.
+SessionStart uses real `cwd`/`session_id`, persists the UUID only in the host-provided private `CLAUDE_ENV_FILE`, and restores an existing exact member in its selected room independently of autoJoin. It enrolls a new UUID only in a valid initialized workspace with autoJoin enabled. Unrelated projects, uninitialized worktrees and subagents never enroll. `agent_type` alone may be a named primary agent; `agent_id` identifies a child. SessionEnd marks the exact session inactive across rooms before process exit.
 
 The host may supply a not-yet-created CLAUDE_ENV_FILE on startup, resume or compaction. Require an absolute path, resolve only its existing parent, and open the leaf with O_RDWR/O_APPEND/O_CREAT/O_NOFOLLOW/O_NONBLOCK and mode 0600 for a new file. Validate the opened descriptor as a regular file owned by the current user, preserve content/newline boundaries, append an identical identity at most once on repeated invocations, and always close the descriptor. Reject linked/non-regular leaves and missing parents; do not create parent directories or initialize unrelated projects. This is host-private identity persistence, not model-delivery evidence.
 
@@ -165,3 +165,5 @@ Real acceptance first verifies a fresh nonce and bidirectional loop, then separa
 Validate interfaces against the installed host and exact session. A design or another conversation's evidence cannot establish current reception.
 
 Alpha 9 fixes a missing host environment file after startup/resume/compaction using the validated descriptor path above. Upgrade the global CLI and explicitly refresh old project bundles/pins; existing owned project hooks also need an explicitly scoped refresh if they still invoke an old executable. The plugin wrapper is unchanged and does not need a new plugin version for this CLI-only fix.
+
+Alpha 10 separates existing-session restoration from new-session auto-join. SessionStart looks up the selected room's exact runtime/UUID read-only when autoJoin is false and reactivates/rebinds that member without changing membership, selection or cursors. It never creates a missing room/member in that mode, resumes other rooms, overrides socket opt-outs/uninstall, weakens native-process/version checks, resets pauses/budgets/reservations or reuses old receiver proof. Setup identifies existing versus created membership. A native event is required; a synthetic hook must never be used to impersonate a real resumed session.

@@ -12,7 +12,7 @@ Give your agent the [onboarding guide](ONBOARDING.md) and say:
 
 > Read this guide, install AgentChat, join this project, and enable automatic message reception for Claude (all peer messages).
 
-Install the program once on the machine. `join` prepares project-local runtime state and membership. It does not modify `AGENTS.md`, `CLAUDE.md`, project hooks or Git exclude. Creating another room, switching rooms and joining another project do not reinstall the program. No separate Bun or Node.js installation is required. [Download Alpha 9](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.9) for macOS or Linux (glibc), arm64 or x64.
+Install the program once on the machine. `join` prepares project-local runtime state and membership. It does not modify `AGENTS.md`, `CLAUDE.md`, project hooks or Git exclude. Creating another room, switching rooms and joining another project do not reinstall the program. No separate Bun or Node.js installation is required. [Download Alpha 10](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.10) for macOS or Linux (glibc), arm64 or x64.
 
 ### Automatic Claude reception
 
@@ -40,7 +40,7 @@ agentchat skills get --json
 
 Reuse a protocol already loaded for the same executable and version. Read it again when the entry/version changes or context is missing. A global CLI upgrade does not replace every project's pinned entry: use the newer `install` preview and `install --apply` for that project's private runtime, then read its own `skills get`. Update the plugin through its host; do not overwrite installed plugin caches.
 
-Claude's plugin automatically loads short SessionStart/SessionEnd hooks. Codex uses only the thin skill. Hooks do not initialize unrelated projects or worktrees. Automatic joining remains off unless enabled for that initialized workspace. No Channel, MCP inbox process or dedicated Claude launcher is required.
+Claude's plugin automatically loads short SessionStart/SessionEnd hooks. Codex uses only the thin skill. Hooks do not initialize unrelated projects or worktrees. Automatic enrollment of new sessions remains off unless enabled for that initialized workspace. An exact session that already joined restores its selected room and receiver binding on SessionStart even with autoJoin off; explicit receiver disablement and workspace uninstall are preserved. No Channel, MCP inbox process or dedicated Claude launcher is required.
 
 The installer creates `~/.local/bin/agentchat` without editing shell configuration. If that directory is not on PATH, use the absolute executable path returned by the installer.
 
@@ -73,7 +73,7 @@ Claude plugin hooks do not need a project-local copy. If the user requests only 
 
 ## Current status
 
-Alpha `0.1.0-alpha.9` fixes missing Claude hook environment files after startup/resume/compaction and provides explicit Claude inbound-policy setup, startup policy notices, compact notifications, plugin discovery, embedded operating instructions and agent-driven joining. The core, notification budgets and reservation behavior are unchanged.
+Alpha `0.1.0-alpha.10` restores existing Claude sessions independently of new-session auto-join, retains the missing environment-file fix, and provides explicit Claude inbound-policy setup, startup policy notices, compact notifications, plugin discovery, embedded operating instructions and agent-driven joining. The core, notification budgets and reservation behavior are unchanged.
 
 Codex uses its native queue. Claude uses the version-checked `claude-socket-experimental` adapter, currently restricted to Claude Code **2.1.312 / peerProtocol 1**, interactive CLI. Historical nonce, bidirectional and real 10-minute/1-hour idle checks passed on the original macOS arm64 session. Those results do not verify another user, session, room or process. Other host combinations must report their actual limitation. See [verification records](docs/verification.md).
 

@@ -4,6 +4,15 @@ English | [Chinese translation](zh-CN/implementation-plan.md)
 
 Use the current self-onboarding design. Historical milestones below record completed work; Channel and timed hooks are retired and must not be restored as setup instructions. Native model tests remain separate from synthetic/unit/package checks.
 
+## Alpha 10: restore joined sessions independently of auto-join
+
+- [x] Restore the selected room's existing exact runtime/UUID membership with autoJoin off; create no room or member in that mode.
+- [x] Preserve member/name/cursor/room, explicit disablement, uninstall/worktree/subagent boundaries, uncertain pauses, budgets, reservations and receiver-proof isolation.
+- [x] Reuse native process/version checks for rebind; SessionStart sends no notification or replay.
+- [x] Distinguish existing/created membership in startup context and document new-session enrollment separately.
+- [x] Regress default/named-room resume, changed receiver, same-name new UUID, nonselected rooms, opt-outs/uninstall, wrong process, unsupported versions and uninitialized worktrees.
+- [x] Exercise compiled plugin hooks with a synthetic peer, autoJoin off and no external Bun/Node on PATH.
+
 ## Alpha 9: missing Claude hook environment files
 
 - [x] Integrate 986b3c3 without modifying unrelated main-workspace changes or the original fix branch.

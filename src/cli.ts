@@ -207,7 +207,16 @@ export async function runCli(args: readonly string[]): Promise<number> {
           else if (v.mark !== undefined) result = { ok: true, read_seq: store.mark(me.id, number(v.mark, "mark")!) };
           else result = { ok: true, ...store.read(number(v.after, "after") ?? me.read_seq, number(v.limit, "limit")) };
         } else if (command === "probe") result = await startProbe(store, project, v.to ? store.member(v.to) : actor());
-        else if (command === "socket-config") result = configureSocket(project, v.to ? store.member(v.to) : actor(), !!v.apply, !!v.disable);
+        else if (command === "socket-config") {
+          const member = v.to ? store.member(v.to) : actor();
+          const configured = configureSocket(project, member, !!v.apply, !!v.disable);
+          if (v.apply && !v.disable) {
+            // An explicit repair already validated the exact live peer. It must also
+            // clear SessionEnd's inactive flag for this existing room membership.
+            saveState(project, { ...state(project, member), session: member.session_ref!, memberId: member.id, active: true, error: undefined });
+            result = { ...configured, reception: receiver(project, member) };
+          } else result = configured;
+        }
         else if (command === "notify") {
           const me = v.to ? store.member(v.to) : actor();
           if (p[1] === "resume") { resume(project, me); result = { ok: true, resumed: me.id, old_reservations_preserved: true }; }

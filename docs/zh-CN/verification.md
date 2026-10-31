@@ -4,6 +4,14 @@
 
 日期：2026-10-28。开发环境：macOS arm64、Bun 1.3.14。
 
+## Alpha 10：已有 Claude 会话恢复（2026-10-31）
+
+现场已有具名房间成员和阅读进度，但 SessionEnd 留下 inactive；SessionStart 只恢复默认目录会话文件，autoJoin=false 导致具名房间及旧 socket 未重绑。隔离环境复现了该状态，诊断没有更改用户数据。
+
+修复将所选房间准确 runtime/UUID 的恢复与新会话加入分开；关闭 autoJoin 时只读已有房间，不创建库/成员、不调用 join。保留原生校验、停用和卸载边界，Setup 区分 existing/created。显式 socket-config --apply 校验准确活跃 peer 后恢复已有房间；校验失败则保持 inactive。回归覆盖默认/具名房间、身份和游标、未选房间保持 inactive、新实例及旧证明隔离、预算预留暂停不变、同名新 UUID、错误进程/版本和未初始化 worktree。
+
+本机 147 项测试、类型检查、源码构建和 macOS arm64 独立程序检查通过。无外部 Bun/Node 的编译入口通过模拟原生 peer 验证恢复与显式修复，未建立任何 peer 连接。38 份中英文文档通过导航、锚点和主文档语言检查。四平台及公开升级按发布流程另行记录；这些检查不代表新真实模型实例已收信。
+
 ## Alpha 9：Hook 环境文件缺失修复（2026-10-31）
 
 在隔离发布分支集成用户补丁 986b3c3。仅对 CLAUDE_ENV_FILE 的已有父目录规范化，以 O_RDWR/O_APPEND/O_CREAT/O_NOFOLLOW/O_NONBLOCK 打开叶子，新建 0600，校验描述符为本用户普通文件，保留内容和换行、重复调用幂等并 finally 关闭；不创建父目录或初始化无关项目。
