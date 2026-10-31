@@ -4,6 +4,14 @@ English | [Chinese translation](zh-CN/verification.md)
 
 Development environment: macOS arm64, Bun 1.3.14. Dates and results below belong to their recorded revision. Synthetic/unit/package checks do not verify delivery to a real model, and a later release never inherits native proof for another session or instance.
 
+## Alpha 10: restore existing Claude sessions (2026-10-31)
+
+The reported configuration retained its named-room member and cursor but SessionEnd had marked that room inactive. SessionStart reactivated only the base session file while autoJoin false skipped the named room and stale socket. An isolated fixture reproduced the same state; no actual user state was changed for that diagnosis.
+
+SessionStart now looks up the selected room's exact existing runtime/UUID independently of new-session enrollment. With autoJoin false it uses an existing room read-only and never calls join or creates a database/member. It reuses native binding checks, preserves explicit opt-outs/uninstall, and reports existing/created membership. Explicit socket-config --apply validates the exact live peer before reactivating an existing ended room; rejected validation leaves it inactive. Targeted checks cover default/named rooms, unchanged identity/cursor, unselected-room inactivity, stale receivers/old proof, preserved budgets/reservations/pauses, unknown UUID/name collisions, wrong-process/version refusal and uninitialized worktrees.
+
+147 local tests, type checking, source build and macOS arm64 standalone checks passed. The compiled executable exercised resume and explicit repair through a synthetic native peer with no external Bun/Node on PATH and no peer connections. All 38 English/Chinese documents passed navigation/anchor/language checks. Four-platform and public-upgrade checks gate and follow release publication. These tests do not establish reception by a new native model instance.
+
 ## Alpha 9: missing Claude hook environment files (2026-10-31)
 
 Integrated the user-provided 986b3c3 patch on an isolated release branch. It resolves only the existing parent of an absolute CLAUDE_ENV_FILE and opens the leaf with O_RDWR/O_APPEND/O_CREAT/O_NOFOLLOW/O_NONBLOCK, creates new files at 0600, validates the opened file/owner, preserves content and repeated-call identity idempotency, and closes descriptors in finally. It never creates a missing parent or initializes unrelated projects.

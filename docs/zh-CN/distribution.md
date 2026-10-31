@@ -32,7 +32,7 @@ bun run check
 bun test tests
 bun run build
 bun run build:release
-bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.9-darwin-arm64
+bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.10-darwin-arm64
 ```
 
 `build:release --target linux-x64` 等入口可交叉编译；release workflow 在四种原生 runner 上分别运行测试、构建和独立程序验收。验收使用全新目录、带空格/引号的路径及不含开发工具的 PATH，检查程序安装与同名命令保护、默认加入不改项目文件、显式可选集成、后续加入、房间切换、hooks、SQLite 收发/mark 和卸载，不向真实会话发通知。
@@ -57,3 +57,5 @@ Alpha 使用固定版本下载链接，不依赖 GitHub 的 latest Release 跳�
 新增 claude-inbound 用户级检查和预览/apply，Accept 需用户明确选择，影响该配置下所有 peer 消息。程序安装和默认 join 不启用；设置一次后启动沿用，已初始化工作区 hook 显示状态并保留后续 hold/refuse。预览无写入，应用备份并保留其他值。详见 [接入说明](ONBOARDING.md#claude-入站策略与启动提示)。
 
 主文档、历史发布说明及生成指令块为英文；中文位于 docs/zh-CN。发布附件提供英文 ONBOARDING，中文译文通过仓库链接访问。
+
+Alpha 10 的已有准确会话在 autoJoin=false 时仍恢复所选房间，新会话默认不加入。升级 CLI 及受影响项目入口/已有托管 hooks 即可，Alpha 8 插件保持兼容。运行中会话需由宿主真实触发 SessionStart，不能伪造 hook 或重放旧通知。

@@ -4,7 +4,7 @@
 
 ## 当前能力与范围
 
-当前版本 `0.1.0-alpha.9`。Claude 使用版本校验的原生 socket，Codex 使用原生 queue；Channel、MCP 收件进程及专用启动器已移除。Claude 插件自动加载短 SessionStart / SessionEnd hooks。完整协作规范随 CLI 发布，以实际执行入口的 `skills get` 为准。
+当前版本 `0.1.0-alpha.10`。Claude 使用版本校验的原生 socket，Codex 使用原生 queue；Channel、MCP 收件进程及专用启动器已移除。Claude 插件自动加载短 SessionStart / SessionEnd hooks。完整协作规范随 CLI 发布，以实际执行入口的 `skills get` 为准。
 
 程序本机安装一次。默认 join / room use / install 只准备本地状态，不读取或修改 AGENTS.md、CLAUDE.md、.claude/settings.local.json 或 Git exclude；Git 项目使用 Git 元数据目录，非 Git 项目使用 .agentchat。创建和切换房间不重装程序。
 
@@ -15,7 +15,7 @@
 由 agent 操作，用户无需搬运 room、UUID 或 socket 路径：
 
 1. 优先使用通知 Read argv 数组的第一个元素，兼容旧通知的 Tool argv，再找当前项目私有 run，其次 PATH 上的 agentchat 和 `$HOME/.local/bin/agentchat`。Git 项目 run 位于 `<git common directory>/agentchat/run`，非 Git 项目位于 `<项目>/.agentchat/run`。检查实际入口 --version；本插件要求 Alpha 6 或更新版本，不继续执行旧 CLI 的 Channel / launcher 流程。
-2. 未安装或需要升级时，将 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.9/install.sh` 下载到临时目录，阅读成功下载的 HTTPS 内容后执行。安装器校验压缩包及程序，返回全局 cli 路径；不初始化业务项目，不改 shell、网关、认证或审批。支持 macOS / Linux glibc 的 arm64 / x64，无需另装 Bun / Node.js。只安装程序时，到此停止。
+2. 未安装或需要升级时，将 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.10/install.sh` 下载到临时目录，阅读成功下载的 HTTPS 内容后执行。安装器校验压缩包及程序，返回全局 cli 路径；不初始化业务项目，不改 shell、网关、认证或审批。支持 macOS / Linux glibc 的 arm64 / x64，无需另装 Bun / Node.js。只安装程序时，到此停止。
 3. 全局升级不会替换所有项目的固定入口。对需升级的旧项目，用全局新版 `--project <根目录> install` 预览，在本地入口升级范围内追加 --apply，再读取更新后项目 run 的 skills get。迁移仅更新私有运行文件和元数据，停用自有旧 Channel 启动器；旧消息、游标、预留及项目文件保留。
    Alpha 9 修复环境文件缺失问题时，只升级全局程序还不够：旧项目 `.git/agentchat/agentchat.js` 或固定二进制入口需用全局新版 install 预览并 --apply 更新。已启用 AgentChat 托管项目 hooks 且本次要求刷新时，还需预览 `--project <根目录> install --hooks` 并应用，保留其他 hooks 和配置；只用插件 hooks 的项目不应额外安装项目副本。重复 join 或仅更新插件不会替换旧 CLI bundle。
 4. 需要后续会话自动发现工具时，按下一节安装所用客户端的用户级插件；已有插件通过宿主机制更新，并按提示重新加载或开启后续会话。CLI 与插件都需更新；CLI 不改写宿主插件缓存。
@@ -86,6 +86,16 @@ hook 包装脚本依次检查 AGENTCHAT_BIN_DIR、PATH、`$HOME/.local/bin/agent
 已初始化项目要让后续主会话自动加入，可在该需求范围内预览 `install --auto-join` 并追加 --apply；这仍只写私有配置。`install --no-auto-join --apply` 停止未来自动登记，`socket-config --disable --apply` 停用当前接收。关闭 autoJoin 不会移除已有成员或消息。
 
 skills list 返回规范列表，skills get [agentchat] 返回 Markdown，--json 返回名称、CLI 版本、正文和 SHA-256。读取不需要项目、原生身份或网络，不初始化房间。同一入口与版本已加载的规范复用；首次使用、切换或升级入口、上下文缺失时再读取，不因每条通知重新加载。不能读取全局新规范后继续执行旧项目程序。
+
+## 恢复已经加入的 Claude 会话
+
+从 Alpha 10 开始，SessionStart 将已有成员恢复与新会话注册分开。在已初始化工作区按所选房间和准确 runtime/UUID 查找已有成员；即使 autoJoin=false，也恢复该房间的 active 状态并按原生进程校验重新绑定，保留成员 ID、名称、选房、消息和阅读进度。成功的真实启动/恢复 hook 不再要求重复 join。
+
+新 UUID 仍需用户明确加入或启用 autoJoin，同名不能接管旧身份。关闭 autoJoin 时只读已有房间查询成员，不创建库或成员；未初始化 worktree、子 agent、卸载工作区不恢复。仅恢复所选房间，其他房间保持未激活。显式停用 socket 始终保留；关闭 autoJoin 只阻止新会话注册，需要停用已加入会话收信时使用 socket-config --disable --apply。
+
+通知预算、预留和 unknown 暂停保留，启动不通知、不重放旧请求；新接收实例不继承旧 nonce。Setup 显示 membership existing/created、房间和实际绑定结果；disabled/unavailable 仍是限制，不是模型收信证据，入站 Accept/hold/refuse 和工具权限不改变。
+
+升级运行中的旧会话时，先更新 CLI、项目固定入口和原有托管 hooks，再由宿主真实触发 startup/resume/compact。不得用真实 UUID 伪造 hook 输入。需要立即人工修复时，可按明确授权使用 socket-config --apply（或 --to 指定准确已有成员）校验活跃 peer 并恢复该房间，再查看 doctor，无需额外 join；真实自动收信仍需新授权 nonce 回传确认。
 
 ## 精简通知
 

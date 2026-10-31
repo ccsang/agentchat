@@ -8,10 +8,10 @@ import { Store } from "../src/store.ts";
 import * as peer from "../src/claude-peer.ts";
 import { automaticSocket, configureSocket, saveSocketProof, socketBinding, socketProof } from "../src/socket-state.ts";
 import { dispatchSocket } from "../src/socket-adapter.ts";
-import { pause, paused, receiver, resume } from "../src/runtime.ts";
+import { pause, paused, policy, receiver, resume, saveState, state } from "../src/runtime.ts";
 import { recordProbeReply, startProbe } from "../src/probe.ts";
 import { writeJson } from "../src/files.ts";
-import { endHook } from "../src/hooks.ts";
+import { endHook, pluginHook } from "../src/hooks.ts";
 import { spawnSync } from "node:child_process";
 import { createRoom, roomProject, selectRoom } from "../src/rooms.ts";
 
@@ -55,22 +55,114 @@ test("unsupported Claude versions remain joined with a concrete error and no Cha
   expect(result.data.reception.mode).toBe(peer.SOCKET_ADAPTER); expect(result.data.reception.transport_alive).toBe(false);
   expect(socketBinding(f.project, b)).toBeNull(); expect(frames).toEqual([]);
 });
-test("only the new native process's SessionStart can automatically replace a stale instance, without replaying messages or proof", () => {
+test("an existing default-room session resumes with auto-join off and rebinds only from its native SessionStart", () => {
   const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! });
   expect(cli(f.root, ["join"], env).status).toBe(0);
-  expect(cli(f.root, ["install", "--auto-join", "--apply"], env).status).toBe(0);
+  expect(policy(f.project).autoJoin).toBe(false);
   const stale = { ...socketBinding(f.project, b)!, instance: "a".repeat(64) };
   writeJson(join(f.project.room, "socket-sessions", `${b.session_ref}.json`), stale);
   saveSocketProof(f.project, b, { nonce: "old", replyId: "old", verifiedAt: Date.now(), hostVersion: stale.version, adapter: peer.SOCKET_ADAPTER, receiverToken: stale.instance });
   store.send({ from: a.id, to: b.id, id: "old-reservation", body: "keep", notify: true });
   store.claim(b.id, 20);
   const batch = store.message("old-reservation").notify_batch_id;
+  store.mark(b.id, store.message("old-reservation").seq);
+  endHook(f.project, { session_id: b.session_ref!, cwd: f.root, hook_event_name: "SessionEnd" });
+  expect(state(f.project, b)?.active).toBe(false);
   expect(automaticSocket(f.project, b).state).toBe("unavailable");
   const result = spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), "hook", "plugin-session-start"],
-    { cwd: f.root, env, input: JSON.stringify({ session_id: b.session_ref, cwd: f.root, hook_event_name: "SessionStart" }), encoding: "utf8" });
+    { cwd: f.root, env, input: JSON.stringify({ session_id: b.session_ref, cwd: f.root, hook_event_name: "SessionStart", source: "resume" }), encoding: "utf8" });
   expect(result.status).toBe(0); expect(socketBinding(f.project, b)?.instance).not.toBe(stale.instance);
+  expect(state(f.project, b)?.active).toBe(true); expect(store.member(b.id).read_seq).toBe(1);
+  expect(JSON.parse(result.stdout).hookSpecificOutput.additionalContext).toContain('"membership":"existing"');
   expect(receiver(f.project, b).verification).toBe("unverified"); expect(socketProof(f.project, b, stale.instance)?.nonce).toBe("old");
   expect(store.message("old-reservation").notify_batch_id).toBe(batch); expect(frames).toEqual([]);
+});
+test("resume restores only the selected named room, preserving identity, cursor, reservations and unknown pauses", () => {
+  const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! });
+  createRoom(f.project, "review"); createRoom(f.project, "other");
+  expect(cli(f.root, ["room", "use", "review"], env).status).toBe(0);
+  const selected = roomProject(f.project, "review"), other = roomProject(f.project, "other");
+  const selectedStore = new Store(selected.room), otherStore = new Store(other.room);
+  try {
+    const member = selectedStore.join({ runtime: b.runtime, session: b.session_ref }, "keep-my-name");
+    const sender = selectedStore.join({ runtime: a.runtime, session: a.session_ref });
+    const otherMember = otherStore.join({ runtime: b.runtime, session: b.session_ref });
+    saveState(other, { session: b.session_ref!, memberId: otherMember.id, active: true });
+    selectedStore.send({ from: sender.id, to: member.id, id: "reserved", body: "keep", notify: true }); selectedStore.claim(member.id, 20);
+    selectedStore.mark(member.id, 1);
+    selectedStore.send({ from: sender.id, to: member.id, id: "unclaimed", body: "keep unread", notify: true });
+    const stale = { ...socketBinding(selected, member)!, instance: "b".repeat(64) };
+    writeJson(join(f.project.room, "socket-sessions", `${b.session_ref}.json`), stale);
+    saveSocketProof(selected, member, { nonce: "historical", replyId: "old", verifiedAt: Date.now(), hostVersion: stale.version, adapter: peer.SOCKET_ADAPTER, receiverToken: stale.instance });
+    endHook(f.project, { session_id: b.session_ref!, cwd: f.root, hook_event_name: "SessionEnd" });
+    const before = readFileSync(join(selected.room, "chat.db"));
+    const call = () => spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), "hook", "plugin-session-start"],
+      { cwd: f.root, env, input: JSON.stringify({ session_id: b.session_ref, cwd: f.root, hook_event_name: "SessionStart", source: "resume" }), encoding: "utf8" });
+    const result = call(); expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout).hookSpecificOutput.additionalContext).toContain('"room":"review"');
+    expect(state(selected, member)?.active).toBe(true); expect(state(other, otherMember)?.active).toBe(false);
+    expect(selectedStore.actor({ runtime: b.runtime, session: b.session_ref })).toEqual({ ...member, read_seq: 1 });
+    expect(readFileSync(join(selected.room, "chat.db"))).toEqual(before);
+    expect(receiver(f.project, b).state).toBe("room_not_selected");
+    const restored = receiver(selected, member, selectedStore.message("reserved").notify_claimed_at! + 1000);
+    expect(restored.state).toBe("rate_limited"); expect(restored.transport_alive).toBe(true); expect(restored.verification).toBe("unverified");
+    expect((restored.limits as { used: number }).used).toBe(1); expect(socketBinding(selected, member)?.instance).not.toBe(stale.instance);
+    expect(socketProof(selected, member, stale.instance)?.nonce).toBe("historical");
+    expect(selectedStore.message("reserved").notify_batch_id).not.toBeNull(); expect(selectedStore.message("unclaimed").notify_batch_id).toBeNull();
+    pause(selected, member, "socket_outcome_unknown", { adapter: peer.SOCKET_ADAPTER });
+    endHook(f.project, { session_id: b.session_ref!, cwd: f.root, hook_event_name: "SessionEnd" });
+    expect(call().status).toBe(0); expect(receiver(selected, member).state).toBe("paused");
+    expect(paused(selected, member)?.reason).toBe("socket_outcome_unknown"); expect(frames).toEqual([]);
+    expect(policy(f.project).autoJoin).toBe(false); expect(cli(f.root, ["room", "current"], env).data.current).toBe("review");
+  } finally { selectedStore.close(); otherStore.close(); }
+});
+test("restoring an existing session preserves socket opt-outs and workspace uninstall", () => {
+  const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! });
+  expect(cli(f.root, ["install", "--apply"], env).status).toBe(0);
+  const call = () => spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), "hook", "plugin-session-start"],
+    { cwd: f.root, env, input: JSON.stringify({ session_id: b.session_ref, cwd: f.root, hook_event_name: "SessionStart" }), encoding: "utf8" });
+  for (const bound of [false, true]) {
+    if (bound) configureSocket(f.project, b, true);
+    configureSocket(f.project, b, true, true);
+    endHook(f.project, { session_id: b.session_ref!, cwd: f.root, hook_event_name: "SessionEnd" });
+    expect(call().status).toBe(0); expect(receiver(f.project, b).state).toBe("disabled");
+    if (!bound) expect(socketBinding(f.project, b)).toBeNull(); else expect(socketBinding(f.project, b)?.enabled).toBe(false);
+  }
+  endHook(f.project, { session_id: b.session_ref!, cwd: f.root, hook_event_name: "SessionEnd" });
+  expect(cli(f.root, ["uninstall", "--apply"], env).status).toBe(0);
+  expect(JSON.parse(call().stdout)).toEqual({}); expect(state(f.project, b)?.active).toBe(false); expect(frames).toEqual([]);
+});
+test("restore cannot rebind a replaced peer from another process or accept an unsupported version", () => {
+  const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! });
+  expect(cli(f.root, ["join"], env).status).toBe(0);
+  const stale = { ...socketBinding(f.project, b)!, instance: "c".repeat(64) };
+  writeJson(join(f.project.room, "socket-sessions", `${b.session_ref}.json`), stale);
+  const result = pluginHook({ session_id: b.session_ref!, cwd: f.root, hook_event_name: "SessionStart" }, "SessionStart", env);
+  expect(JSON.stringify(result)).toContain("own SessionStart"); expect(socketBinding(f.project, b)?.instance).toBe(stale.instance);
+  metadata.version = "2.1.313"; writeFileSync(metaPath, JSON.stringify(metadata));
+  const child = spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), "hook", "plugin-session-start"],
+    { cwd: f.root, env, input: JSON.stringify({ session_id: b.session_ref, cwd: f.root, hook_event_name: "SessionStart" }), encoding: "utf8" });
+  expect(child.status).toBe(0); expect(child.stdout).toContain("E_PEER_VERSION"); expect(socketBinding(f.project, b)?.instance).toBe(stale.instance); expect(frames).toEqual([]);
+});
+test("explicit live-peer repair reactivates an ended named-room membership without another join", () => {
+  const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! });
+  createRoom(f.project, "review"); expect(cli(f.root, ["room", "use", "review"], env).status).toBe(0);
+  const selected = roomProject(f.project, "review"), target = new Store(selected.room);
+  try {
+    const member = target.actor({ runtime: b.runtime, session: b.session_ref });
+    const stale = { ...socketBinding(selected, member)!, instance: "d".repeat(64) };
+    writeJson(join(f.project.room, "socket-sessions", `${b.session_ref}.json`), stale);
+    endHook(f.project, { session_id: b.session_ref!, cwd: f.root, hook_event_name: "SessionEnd" });
+    expect(state(selected, member)?.active).toBe(false);
+    metadata.version = "2.1.313"; writeFileSync(metaPath, JSON.stringify(metadata));
+    expect(cli(f.root, ["--room", "review", "socket-config", "--to", member.id, "--apply"], testEnv()).data.error.code).toBe("E_PEER_VERSION");
+    expect(state(selected, member)?.active).toBe(false);
+    metadata.version = "2.1.312"; writeFileSync(metaPath, JSON.stringify(metadata));
+    const result = cli(f.root, ["--room", "review", "socket-config", "--to", member.id, "--apply"], testEnv());
+    expect(result.status).toBe(0); expect(result.data.reception_verified).toBe(false); expect(result.data.reception.transport_alive).toBe(true);
+    expect(state(selected, member)?.active).toBe(true); expect(target.actor({ runtime: b.runtime, session: b.session_ref })).toEqual(member);
+    expect(socketBinding(selected, member)?.instance).not.toBe(stale.instance); expect(policy(f.project).autoJoin).toBe(false); expect(frames).toEqual([]);
+  } finally { target.close(); }
 });
 test("explicit socket opt-out survives later automatic joining", () => {
   configureSocket(f.project, b, true); configureSocket(f.project, b, true, true);

@@ -43,7 +43,7 @@ bun run check
 bun test tests
 bun run build
 bun run build:release
-bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.9-darwin-arm64
+bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.10-darwin-arm64
 ```
 
 `build:release --target linux-x64` supports cross-compilation. The release workflow uses four native runners for tests, builds and standalone verification. Fresh directories, special-character paths and PATH without developer runtimes cover installation/command protection, runtime-only defaults, explicit integrations, rooms, hooks/startup notices, inbound-policy preview/backup/reversal, SQLite messaging/mark and removal. Fake clients never notify real sessions.
@@ -62,3 +62,5 @@ Native model acceptance is separate. Historical evidence covers only the origina
 Alpha installers use fixed release URLs instead of latest redirects. Publish a new tag and packages for upgrades; never replace old release bytes or rewrite project pins globally.
 
 References: [Bun standalone executables](https://bun.sh/docs/bundler/executables), [GitHub hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+
+Alpha 10 restores an existing exact Claude session in its selected room even when autoJoin is false. New-session enrollment remains opt-in. Upgrade the global CLI and affected project pins/owned hooks; the unchanged Alpha 8 plugin remains compatible. Let the host run a real SessionStart after updating a live session, without fabricating hook context or replaying old notifications.

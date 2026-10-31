@@ -6,8 +6,11 @@ import { spawnSync } from "node:child_process";
 import { applyInstall, planInstall } from "../src/install.ts";
 import { pluginHook } from "../src/hooks.ts";
 import { Store } from "../src/store.ts";
-import { receiver, state } from "../src/runtime.ts";
-import { fixture, testEnv } from "./helpers.ts";
+import { receiver, saveState, state } from "../src/runtime.ts";
+import { fixture, git, testEnv } from "./helpers.ts";
+import { createRoom, roomProject, selectRoom } from "../src/rooms.ts";
+import { discoverProject } from "../src/project.ts";
+import { workspaceDir } from "../src/workspace.ts";
 
 let f: ReturnType<typeof fixture>, host: ReturnType<typeof fixture>;
 beforeEach(() => { f = fixture(); host = fixture(); }); afterEach(() => { f.cleanup(); host.cleanup(); });
@@ -73,6 +76,34 @@ test("auto-join opt-out and uninstall stop plugin enrollment", async () => {
   expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
   applyInstall(await planInstall(f.project, { uninstall: true }));
   expect(pluginHook(input(), "SessionStart", envFor())).toEqual({}); expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
+});
+test("auto-join off never enrolls a new UUID in an existing selected room or takes over a same-named member", async () => {
+  applyInstall(await planInstall(f.project, { autoJoin: false })); createRoom(f.project, "review");
+  const project = roomProject(f.project, "review"), context = input(), store = new Store(project.room);
+  try {
+    const generatedName = `claude-${new Bun.CryptoHasher("sha256").update(context.session_id).digest("hex").slice(0, 10)}`;
+    const existing = store.join({ runtime: "claude", session: randomUUID() }, generatedName);
+    selectRoom(project, { runtime: "claude", session: context.session_id });
+    const before = readFileSync(join(project.room, "chat.db"));
+    const result = pluginHook(context, "SessionStart", envFor());
+    expect(JSON.stringify(result)).toContain("auto_join_disabled"); expect(store.members()).toEqual([existing]);
+    expect(readFileSync(join(project.room, "chat.db"))).toEqual(before);
+    expect(state(project, existing)).toBeNull(); expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
+  } finally { store.close(); }
+});
+test("an existing shared-room identity cannot resume from an uninitialized worktree", async () => {
+  git(f.root, ["init", "-b", "main"]);
+  git(f.root, ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-m", "fixture"]);
+  const project = discoverProject(f.root); applyInstall(await planInstall(project, { autoJoin: false })); createRoom(project, "review");
+  const selected = roomProject(project, "review"), store = new Store(selected.room), session = randomUUID();
+  try {
+    const member = store.join({ runtime: "claude", session }); selectRoom(selected, { runtime: "claude", session });
+    saveState(selected, { session, memberId: member.id, active: false });
+    const linked = join(f.root, "linked"); git(f.root, ["worktree", "add", "-b", "linked", linked]);
+    const other = discoverProject(linked);
+    expect(pluginHook({ session_id: session, cwd: linked, hook_event_name: "SessionStart" }, "SessionStart", envFor())).toEqual({});
+    expect(existsSync(join(workspaceDir(other), "installed.json"))).toBe(false); expect(state(selected, member)?.active).toBe(false);
+  } finally { store.close(); }
 });
 test("startup displays inbound user policy without changing it or overriding hold/refuse", async () => {
   applyInstall(await planInstall(f.project));
