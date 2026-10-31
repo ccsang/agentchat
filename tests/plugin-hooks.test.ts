@@ -143,6 +143,13 @@ test("missing CLI is silent and plugin context follows native cwd rather than st
     { cwd: host.root, env: envFor(), input: JSON.stringify(context), encoding: "utf8" });
   expect(cli.status).toBe(0); expect(JSON.parse(cli.stdout)).toEqual({}); expect(readdirSync(f.root)).toEqual([]);
 });
+test("plugin hooks stay silent outside any eligible project but still report malformed input", () => {
+  for (const event of ["SessionStart", "SessionEnd"] as const) expect(pluginHook({ ...input(event), cwd: "/" }, event, envFor())).toEqual({});
+  const cli = spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), "hook", "plugin-session-start"],
+    { cwd: "/", env: envFor(), input: JSON.stringify({ ...input(), cwd: "/" }), encoding: "utf8" });
+  expect(cli.status).toBe(0); expect(JSON.parse(cli.stdout)).toEqual({}); expect(cli.stderr).toBe("");
+  expect(() => pluginHook({ ...input("SessionEnd"), cwd: "/" }, "SessionStart", envFor())).toThrow();
+});
 test("upgrading retires owned private Channel launchers without touching user launchers", async () => {
   mkdirSync(f.project.room, { mode: 0o700 });
   const old = join(f.project.room, "claude.command"); writeFileSync(old, '#!/bin/sh\n# AgentChat managed Claude entry. Host confirmations remain interactive.\nexit 0\n', { mode: 0o700 });

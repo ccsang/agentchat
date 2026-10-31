@@ -96,7 +96,10 @@ export function endHook(project: Project, input: HookInput, _env: NodeJS.Process
 export function pluginHook(input: HookInput, event: "SessionStart" | "SessionEnd", env: NodeJS.ProcessEnv): Record<string, unknown> {
   requireThat(input && input.hook_event_name === event, "E_HOOK", "Unexpected plugin hook event");
   if (input.agent_id) return {};
-  const project = discoverProject(input.cwd);
+  let project: Project;
+  // Globally loaded plugin hooks stay silent outside any eligible project (home, filesystem root, non-Git).
+  try { project = discoverProject(input.cwd); }
+  catch (error) { if ((error as { code?: string }).code === "E_PROJECT") return {}; throw error; }
   if (event === "SessionStart") return registerHook(project, input, env, true);
   endHook(project, input, env); return {};
 }

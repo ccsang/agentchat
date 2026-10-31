@@ -43,6 +43,7 @@ Setup / diagnostics:
   uninstall [--instructions] [--hooks] [--apply]  Remove selected integration, or disable all; keep history.
   doctor                             Report current identity and receiver evidence.
   probe [--to NAME|ID]                Native nonce probe; may use model quota.
+  notify status [--to NAME|ID]        Show receiver evidence and any notification pause.
   notify resume [--to NAME|ID]        Resume future notifications, never reset old attempts.
   socket-config [--to NAME|ID] [--apply] [--disable]  Rebind/disable the native Claude socket (Claude Code 2.1.312+).
 
@@ -127,19 +128,19 @@ export async function runCli(args: readonly string[]): Promise<number> {
       }
       return 0;
     }
-    requireThat(p.length === (command === "room" ? p[1] === "create" || p[1] === "use" ? 3 : 2 : hook || command === "notify" || command === "launch" ? 2 : 1), "E_USAGE", "Unexpected positional arguments");
+    requireThat(p.length === (command === "room" ? p[1] === "create" || p[1] === "use" ? 3 : 2 : hook || command === "notify" ? 2 : 1), "E_USAGE", "Unexpected positional arguments");
     const specific: Record<string, string[]> = {
       join: ["name", "generic"], room: [], members: [], send: ["to", "reply-to", "notify", "id", "text", "stdin"],
       read: ["new", "after", "id", "mark", "limit"], install: ["apply", "instructions", "hooks", "auto-join", "no-auto-join", "budget", "window-seconds", "codex-bin"],
-      uninstall: ["apply", "instructions", "hooks"], doctor: [], probe: ["to"], notify: ["to"], hook: ["agentchat-managed"], "channel-config": ["apply", "to"], "socket-config": ["apply", "to", "disable"], launch: ["to"],
+      uninstall: ["apply", "instructions", "hooks"], doctor: [], probe: ["to"], notify: ["to"], hook: ["agentchat-managed"], "socket-config": ["apply", "to", "disable"],
     };
     const allowed = new Set(["project", "room", "as", "json", ...(specific[command ?? ""] ?? [])]);
     for (const key of Object.keys(v)) requireThat(allowed.has(key), "E_USAGE", `--${key} is not valid for ${command}`);
     const base = discoverProject(v.project ?? process.cwd());
     requireThat(!v.room || !["room", "install", "uninstall", "hook"].includes(command ?? ""), "E_USAGE", "Project setup and room management do not take --room; use room use NAME");
-    const physical = command === "install" || command === "uninstall" || command === "hook" || command === "room" || command === "notify" && p[1] === "claude-channel";
+    const physical = command === "install" || command === "uninstall" || command === "hook" || command === "room";
     const identity = command === "join" ? v.generic ? { runtime: "generic" as const, session: null } : identify() : physical ? undefined : optionalIdentity();
-    requireThat(!v.room || !physical, "E_USAGE", "Project hooks and the Channel follow session room selection; they do not accept --room");
+    requireThat(!v.room || !physical, "E_USAGE", "Project hooks follow session room selection; they do not accept --room");
     const project = physical ? base : resolveRoom(base, v.room, identity);
     let result: unknown;
     if (command === "room") {
@@ -206,12 +207,19 @@ export async function runCli(args: readonly string[]): Promise<number> {
         else if (command === "send") {
           requireThat((v.text !== undefined) !== !!v.stdin, "E_USAGE", "Provide exactly one of --text or --stdin");
           const sent = store.send({ from: actor(true).id, to: v.to, replyTo: v["reply-to"], body: v.stdin ? await stdin(8192) : v.text!, notify: v.notify, id: v.id });
+          // Probe proof and notification are independent: one failing must not hide the other.
+          let probeProof: unknown;
+          if (sent.message.reply_to?.startsWith("probe-")) {
+            // recordProbeReply silently ignores non-matching replies, so only a thrown failure is reported.
+            try { recordProbeReply(store, project, sent.message, identify()); }
+            catch (error) { probeProof = { state: "unrecorded", diagnostic: errorResult(error) }; }
+          }
           let notification: unknown = { state: "not_requested" };
           try {
-            if (sent.message.reply_to?.startsWith("probe-")) recordProbeReply(store, project, sent.message, identify());
             if (sent.message.notify) notification = sent.reused ? { state: "not_retried", reason: "Idempotent resend never repeats a notification attempt" } : await notifyMember(store, project, store.member(sent.message.to_id!));
           } catch (error) { notification = { state: "unknown", diagnostic: errorResult(error) }; }
-          result = { ok: true, stored: true, message_id: sent.message.id, seq: sent.message.seq, reused: sent.reused, notify_requested: !!sent.message.notify, notification };
+          result = { ok: true, stored: true, message_id: sent.message.id, seq: sent.message.seq, reused: sent.reused, notify_requested: !!sent.message.notify, notification,
+            ...(probeProof ? { probe_proof: probeProof } : {}) };
         } else if (command === "read") {
           requireThat([v.new, v.after !== undefined, v.id !== undefined, v.mark !== undefined].filter(Boolean).length <= 1, "E_USAGE", "Choose one read mode");
           const me = actor(v.mark !== undefined);

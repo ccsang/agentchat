@@ -34,6 +34,18 @@ test("generic operator CLI roundtrip and explicit mark", () => {
   expect(cli(f.root, ["--as", "b", "send", "--reply-to", "q", "--stdin"], testEnv(), "收到").status).toBe(0);
   expect(cli(f.root, ["--as", "a", "read", "--id", "q"]).data.message.body).toBe("问候");
 });
+test("a probe reply whose proof cannot be recorded still sends its notification", () => {
+  expect(cli(f.root, ["join", "--generic", "--name", "a"]).status).toBe(0);
+  expect(cli(f.root, ["join", "--generic", "--name", "b"]).status).toBe(0);
+  expect(cli(f.root, ["--as", "a", "send", "--to", "b", "--id", "probe-x", "--text", "probe"]).status).toBe(0);
+  // Generic shells have no native identity, so recording proof fails independently of notification.
+  const reply = cli(f.root, ["--as", "b", "send", "--reply-to", "probe-x", "--notify", "--text", "nonce"]);
+  expect(reply.status).toBe(0); expect(reply.data.stored).toBe(true);
+  expect(reply.data.notification.state).toBe("manual");
+  expect(reply.data.probe_proof.state).toBe("unrecorded"); expect(reply.data.probe_proof.diagnostic.error.code).toBe("E_IDENTITY");
+  const plain = cli(f.root, ["--as", "b", "send", "--to", "a", "--text", "no probe"]);
+  expect(plain.data.probe_proof).toBeUndefined();
+});
 test("invalid command options cannot silently mutate state", () => {
   expect(cli(f.root, ["join", "--mark", "100"]).data.error.code).toBe("E_USAGE");
   expect(existsSync(f.project.room)).toBe(false);
