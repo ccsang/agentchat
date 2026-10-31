@@ -11,7 +11,7 @@ export function fixture() {
 }
 export function testEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  for (const key of ["CODEX_THREAD_ID", "AGENTCHAT_CLAUDE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_AGENT_ID", "AGENTCHAT_SUBAGENT", "AGENTCHAT_CODEX_BIN", "AGENTCHAT_GIT_BIN", "AGENTCHAT_LAUNCH_ID", "AGENTCHAT_LAUNCH_TOKEN", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDECODE"]) delete env[key];
+  for (const key of ["CODEX_THREAD_ID", "AGENTCHAT_CLAUDE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_ENV_FILE", "CLAUDE_AGENT_ID", "AGENTCHAT_SUBAGENT", "AGENTCHAT_CODEX_BIN", "AGENTCHAT_GIT_BIN", "AGENTCHAT_LAUNCH_ID", "AGENTCHAT_LAUNCH_TOKEN", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDECODE"]) delete env[key];
   return { ...env, ...extra };
 }
 export function cli(root: string, args: string[], env = testEnv(), input?: string) {

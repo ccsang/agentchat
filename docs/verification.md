@@ -4,6 +4,12 @@ English | [Chinese translation](zh-CN/verification.md)
 
 Development environment: macOS arm64, Bun 1.3.14. Dates and results below belong to their recorded revision. Synthetic/unit/package checks do not verify delivery to a real model, and a later release never inherits native proof for another session or instance.
 
+## Alpha 9: missing Claude hook environment files (2026-10-31)
+
+Integrated the user-provided 986b3c3 patch on an isolated release branch. It resolves only the existing parent of an absolute CLAUDE_ENV_FILE and opens the leaf with O_RDWR/O_APPEND/O_CREAT/O_NOFOLLOW/O_NONBLOCK, creates new files at 0600, validates the opened file/owner, preserves content and repeated-call identity idempotency, and closes descriptors in finally. It never creates a missing parent or initializes unrelated projects.
+
+Regression coverage includes startup/resume/compact missing-file inputs, existing content/newlines, repeat calls, live/dangling links, relative paths, directory/FIFO rejection and explicit replacement of an old project bundle/owned hook command while preserving user hooks/settings. Standalone verification uses isolated synthetic compact input; this does not establish real native compaction or model-delivery evidence. The plugin wrapper/skill remain Alpha 8 because the fix ships in the CLI. 141 local tests, type checking, source build and macOS arm64 standalone checks passed. The compiled executable verified both plugin and managed-hook missing-file creation/idempotency, with no external Bun/Node on PATH. All 36 English/Chinese documents passed navigation/anchor/language checks. Four-platform and public-upgrade checks gate and follow release publication.
+
 ## Alpha 8: Claude inbound setup and English docs (2026-10-30)
 
 Added user-level inbound inspection/preview/apply outside project/native-identity discovery, with accept/hold/refuse/default, exact prior-byte backups, preserved unrelated settings and modes, idempotency, malformed/link/permission rejection and stale-plan conflict checks. The command reports only the affected policy and file hashes, not unrelated settings. Default install/join still does not change user-level policy or business files.

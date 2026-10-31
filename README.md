@@ -12,7 +12,7 @@ Give your agent the [onboarding guide](ONBOARDING.md) and say:
 
 > Read this guide, install AgentChat, join this project, and enable automatic message reception for Claude (all peer messages).
 
-Install the program once on the machine. `join` prepares project-local runtime state and membership. It does not modify `AGENTS.md`, `CLAUDE.md`, project hooks or Git exclude. Creating another room, switching rooms and joining another project do not reinstall the program. No separate Bun or Node.js installation is required. [Download Alpha 8](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.8) for macOS or Linux (glibc), arm64 or x64.
+Install the program once on the machine. `join` prepares project-local runtime state and membership. It does not modify `AGENTS.md`, `CLAUDE.md`, project hooks or Git exclude. Creating another room, switching rooms and joining another project do not reinstall the program. No separate Bun or Node.js installation is required. [Download Alpha 9](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.9) for macOS or Linux (glibc), arm64 or x64.
 
 ### Automatic Claude reception
 
@@ -73,7 +73,7 @@ Claude plugin hooks do not need a project-local copy. If the user requests only 
 
 ## Current status
 
-Alpha `0.1.0-alpha.8` provides explicit Claude inbound-policy setup, startup policy notices, compact notifications, plugin discovery, embedded operating instructions and agent-driven joining. The core, notification budgets and reservation behavior are unchanged.
+Alpha `0.1.0-alpha.9` fixes missing Claude hook environment files after startup/resume/compaction and provides explicit Claude inbound-policy setup, startup policy notices, compact notifications, plugin discovery, embedded operating instructions and agent-driven joining. The core, notification budgets and reservation behavior are unchanged.
 
 Codex uses its native queue. Claude uses the version-checked `claude-socket-experimental` adapter, currently restricted to Claude Code **2.1.312 / peerProtocol 1**, interactive CLI. Historical nonce, bidirectional and real 10-minute/1-hour idle checks passed on the original macOS arm64 session. Those results do not verify another user, session, room or process. Other host combinations must report their actual limitation. See [verification records](docs/verification.md).
 

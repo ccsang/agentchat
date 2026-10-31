@@ -47,6 +47,15 @@ test("host environment writes reject links and missing parent directories", () =
   expect(existsSync(missing)).toBe(false);
   expect(readdirSync(f.root)).toEqual([]);
 });
+test("host environment writes reject relative paths and non-regular leaves without blocking", () => {
+  expect(() => pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: "relative-env.sh" })).toThrow("must be absolute");
+  const directory = join(host.root, "directory"); mkdirSync(directory);
+  expect(() => pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: directory })).toThrow();
+  const fifo = join(host.root, "fifo");
+  expect(spawnSync("mkfifo", [fifo], { encoding: "utf8" }).status).toBe(0);
+  expect(() => pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: fifo })).toThrow("must be regular");
+  expect(readdirSync(directory)).toEqual([]); expect(readdirSync(f.root)).toEqual([]);
+});
 test("plugin lifecycle auto-enrolls only initialized projects without requiring project hooks", async () => {
   applyInstall(await planInstall(f.project, { autoJoin: true }));
   const context = { ...input(), agent_type: "custom-primary" }; pluginHook(context, "SessionStart", envFor());

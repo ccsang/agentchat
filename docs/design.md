@@ -2,7 +2,7 @@
 
 English | [Chinese translation](zh-CN/design.md)
 
-This is the current agent-driven onboarding design, including the Alpha 8 inbound-policy revision. Historical Channel and timed Stop-hook approaches are recorded at the end; they are not supported setup instructions. Implementation and real-host evidence are distinguished in [verification.md](verification.md).
+This is the current agent-driven onboarding design, including the Alpha 9 hook environment-file fix. Historical Channel and timed Stop-hook approaches are recorded at the end; they are not supported setup instructions. Implementation and real-host evidence are distinguished in [verification.md](verification.md).
 
 ## 1. Product scope and reliability
 
@@ -123,6 +123,8 @@ Claude's manifest alone names `hooks/claude-hooks.json`, containing SessionStart
 
 SessionStart uses real `cwd`/`session_id`, persists the UUID only in the host-provided private `CLAUDE_ENV_FILE`, and registers/binds only a valid initialized workspace with autoJoin enabled. Unrelated projects, uninitialized worktrees and subagents never enroll. `agent_type` alone may be a named primary agent; `agent_id` identifies a child. SessionEnd marks the exact session inactive across rooms before process exit.
 
+The host may supply a not-yet-created CLAUDE_ENV_FILE on startup, resume or compaction. Require an absolute path, resolve only its existing parent, and open the leaf with O_RDWR/O_APPEND/O_CREAT/O_NOFOLLOW/O_NONBLOCK and mode 0600 for a new file. Validate the opened descriptor as a regular file owned by the current user, preserve content/newline boundaries, append an identical identity at most once on repeated invocations, and always close the descriptor. Reject linked/non-regular leaves and missing parents; do not create parent directories or initialize unrelated projects. This is host-private identity persistence, not model-delivery evidence.
+
 Explicit socket disablement survives joining. A changed instance requires its new native process's own SessionStart or an explicit rebind; it never inherits old nonce proof. Version mismatch preserves manual messaging with a concrete reason and starts no fallback adapter. Owned legacy Channel launchers become retired stubs during migration; user launchers and running clients remain untouched.
 
 ## 9. Claude inbound policy and startup (Alpha 8)
@@ -161,3 +163,5 @@ Real acceptance first verifies a fresh nonce and bidirectional loop, then separa
 - [Claude setting precedence](https://code.claude.com/docs/en/settings-reference#crosssessioninbound)
 
 Validate interfaces against the installed host and exact session. A design or another conversation's evidence cannot establish current reception.
+
+Alpha 9 fixes a missing host environment file after startup/resume/compaction using the validated descriptor path above. Upgrade the global CLI and explicitly refresh old project bundles/pins; existing owned project hooks also need an explicitly scoped refresh if they still invoke an old executable. The plugin wrapper is unchanged and does not need a new plugin version for this CLI-only fix.
