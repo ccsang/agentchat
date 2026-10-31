@@ -52,6 +52,12 @@ try {
   assert(!existsSync(join(project, ".agentchat")), "Inbound setup initialized a project");
   const pluginWrapper = resolve(import.meta.dir, "../plugins/agentchat/scripts/hook.sh"), nativeEnv = join(root, "native-env");
   const startupSession = randomUUID(), startup = JSON.stringify({ session_id: startupSession, cwd: project, hook_event_name: "SessionStart" });
+  const compactEnv = join(root, "compact-env"), compact = JSON.stringify({ session_id: startupSession, cwd: project, hook_event_name: "SessionStart", source: "compact" });
+  assert(run("/bin/sh", [pluginWrapper, "session-start"], compact, { CLAUDE_ENV_FILE: compactEnv }) === "{}", "Compact hook failed on a missing environment file");
+  const compactIdentity = readFileSync(compactEnv, "utf8");
+  assert(compactIdentity === `export AGENTCHAT_CLAUDE_SESSION_ID='${startupSession}'\n` && (statSync(compactEnv).mode & 0o777) === 0o600, "Compact identity file is missing, incorrect or not private");
+  run("/bin/sh", [pluginWrapper, "session-start"], compact, { CLAUDE_ENV_FILE: compactEnv });
+  assert(readFileSync(compactEnv, "utf8") === compactIdentity && !existsSync(join(project, ".agentchat")), "Repeated compact hook duplicated identity or initialized the project");
   writeFileSync(nativeEnv, "export USER_RULE='keep'\n", { mode: 0o600 });
   assert(run("/bin/sh", [pluginWrapper, "session-start"], startup, { CLAUDE_ENV_FILE: nativeEnv }) === "{}", "Plugin hook initialized an unrelated project");
   assert(!existsSync(join(project, ".agentchat")) && readFileSync(nativeEnv, "utf8").includes(startupSession), "Plugin identity is missing or startup wrote project state");
@@ -85,7 +91,12 @@ try {
   const hook = settings.hooks.SessionStart[0].hooks[0];
   assert(hook.command === program && hook.args[0] === "--project", "Hook still launches a Bun script");
   const session = randomUUID();
-  run(hook.command, hook.args, JSON.stringify({ session_id: session, cwd: project, hook_event_name: "SessionStart" }));
+  const managedCompactEnv = join(root, "managed-compact-env"), managedCompact = JSON.stringify({ session_id: session, cwd: project, hook_event_name: "SessionStart", source: "compact" });
+  run(hook.command, hook.args, managedCompact, { CLAUDE_ENV_FILE: managedCompactEnv });
+  const managedIdentity = readFileSync(managedCompactEnv, "utf8");
+  assert(managedIdentity === `export AGENTCHAT_CLAUDE_SESSION_ID='${session}'\n`, "Compiled managed compact hook did not create its environment file");
+  run(hook.command, hook.args, managedCompact, { CLAUDE_ENV_FILE: managedCompactEnv });
+  assert(readFileSync(managedCompactEnv, "utf8") === managedIdentity, "Compiled managed compact hook duplicated identity");
   const host = { AGENTCHAT_CLAUDE_SESSION_ID: session };
   const native = JSON.parse(run(globalCli, ["--project", project, "join"], undefined, host));
   assert(native.initialization.initialized === false, "A new session reinitialized its project");
@@ -149,6 +160,6 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
   const afterUninstall = randomUUID();
   assert(run("/bin/sh", [pluginWrapper, "session-start"], JSON.stringify({ session_id: afterUninstall, cwd: project, hook_event_name: "SessionStart" })) === "{}", "Plugin enrolled an uninstalled workspace");
   console.log(JSON.stringify({ ok: true, version, platform: process.platform, arch: process.arch,
-    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "inbound_preview_no_writes", "inbound_exact_backup_and_preserved_settings", "inbound_idempotency_and_reversal", "startup_inbound_policy_notice", "generated_english_instructions", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "compact_three_line_notification", "compact_routing_after_room_switch_from_other_cwd", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
+    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "plugin_compact_missing_env_and_idempotency", "managed_compact_missing_env_and_idempotency", "inbound_preview_no_writes", "inbound_exact_backup_and_preserved_settings", "inbound_idempotency_and_reversal", "startup_inbound_policy_notice", "generated_english_instructions", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "compact_three_line_notification", "compact_routing_after_room_switch_from_other_cwd", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
     native_reception_verified: false }));
 } finally { rmSync(root, { recursive: true, force: true }); }

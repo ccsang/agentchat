@@ -1,8 +1,7 @@
-import { readFileSync, appendFileSync, realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { sessionId } from "./identity.ts";
 import { baseProject, discoverProject, integrationDir } from "./project.ts";
-import { regularFile } from "./files.ts";
 import { Store } from "./store.ts";
 import { policy, saveState, sessionPath, state, uninstalled } from "./runtime.ts";
 import type { SessionState } from "./runtime.ts";
@@ -24,11 +23,20 @@ export function validateHook(input: HookInput, project: Project, event: string):
 }
 function persistIdentity(project: Project, session: string, env: NodeJS.ProcessEnv): void {
   if (!env.CLAUDE_ENV_FILE) return;
-  const file = realpathSync(env.CLAUDE_ENV_FILE); regularFile(file, false);
+  requireThat(isAbsolute(env.CLAUDE_ENV_FILE), "E_HOOK", "The host environment file must be absolute");
+  // Claude may supply a file that does not exist yet, including after compact.
+  // Resolve its existing parent, then open the leaf without following links.
+  const file = join(realpathSync(dirname(env.CLAUDE_ENV_FILE)), basename(env.CLAUDE_ENV_FILE));
   requireThat(dirname(file) !== project.room, "E_HOOK", "Unexpected environment file location");
   const line = `export AGENTCHAT_CLAUDE_SESSION_ID='${session}'\n`;
-  const before = readFileSync(file, "utf8");
-  if (!before.includes(line)) appendFileSync(file, `${before && !before.endsWith("\n") ? "\n" : ""}${line}`);
+  const fd = openSync(file, constants.O_RDWR | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
+  try {
+    const info = fstatSync(fd);
+    requireThat(info.isFile(), "E_PERMISSIONS", "The host environment file must be regular");
+    requireThat(process.getuid === undefined || info.uid === process.getuid(), "E_PERMISSIONS", "The host environment file has another owner");
+    const before = readFileSync(fd, "utf8");
+    if (!before.includes(line)) writeFileSync(fd, `${before && !before.endsWith("\n") ? "\n" : ""}${line}`);
+  } finally { closeSync(fd); }
 }
 export function registerHook(project: Project, input: HookInput, env: NodeJS.ProcessEnv, plugin = false): Record<string, unknown> {
   project = baseProject(project);

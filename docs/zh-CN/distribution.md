@@ -32,7 +32,7 @@ bun run check
 bun test tests
 bun run build
 bun run build:release
-bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.8-darwin-arm64
+bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.9-darwin-arm64
 ```
 
 `build:release --target linux-x64` 等入口可交叉编译；release workflow 在四种原生 runner 上分别运行测试、构建和独立程序验收。验收使用全新目录、带空格/引号的路径及不含开发工具的 PATH，检查程序安装与同名命令保护、默认加入不改项目文件、显式可选集成、后续加入、房间切换、hooks、SQLite 收发/mark 和卸载，不向真实会话发通知。

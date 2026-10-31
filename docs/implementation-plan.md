@@ -4,6 +4,15 @@ English | [Chinese translation](zh-CN/implementation-plan.md)
 
 Use the current self-onboarding design. Historical milestones below record completed work; Channel and timed hooks are retired and must not be restored as setup instructions. Native model tests remain separate from synthetic/unit/package checks.
 
+## Alpha 9: missing Claude hook environment files
+
+- [x] Integrate 986b3c3 without modifying unrelated main-workspace changes or the original fix branch.
+- [x] Resolve only the existing parent of an absolute host environment path; create/open the leaf without following links and validate its descriptor/owner.
+- [x] Preserve content/newline boundaries and repeated-call identity idempotency; always close descriptors and refuse missing parents/non-regular targets.
+- [x] Cover startup/resume/compact with missing files, link rejection, nonblocking non-regular targets and explicit old bundle/managed-hook upgrade.
+- [x] Extend standalone verification with isolated compact input; keep this separate from real native-host reception.
+- [x] Update English documentation and Chinese translations with the per-project upgrade requirement.
+
 ## Alpha 8: Claude inbound setup and English documentation
 
 - [x] Add project/identity-independent user-level `claude-inbound` inspection and explicit preview/apply for accept, hold, refuse and default.

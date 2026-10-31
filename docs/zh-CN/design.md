@@ -2,7 +2,7 @@
 
 # AgentChat Lite v0.1 设计基线
 
-当前实现以最后的 Alpha 8 修订为准：Claude 插件自动加载生命周期 hooks，原生 socket 为唯一 Claude 接收路径，Channel 章节仅作历史设计。
+当前实现以最后的 Alpha 9 修订为准：Claude 插件自动加载生命周期 hooks，原生 socket 为唯一 Claude 接收路径，Channel 章节仅作历史设计。
 
 本设计归纳自“设计本地通信方案”对话。以“agent 自助接入”和“Claude 持续接收”的修订覆盖此前手动接入及限时 hook 接收步骤；重型 AgentBus 方案和要求用户维持 Codex 轮询桥的版本不作为实现基线。
 
@@ -278,3 +278,9 @@ Alpha 5 标签的 Linux arm64 并发写入检查出现一个子进程退出，�
 保存一次后启动持续生效；已初始化工作区的 SessionStart 显示并提供当前用户值，不反复覆盖，后续 hold/refuse 保留，无关项目静默。doctor 区分用户值、未验证的实际策略和模型收信证据。Accept 作用于该配置下全部 peer 消息；managed/启动设置及更严格项目规则仍生效，项目 accept 不能放宽默认。规则及接入步骤见中文 ONBOARDING；不伪造发送方权限、子进程凭据或回复地址来绕过审批。
 
 主文档、发布说明和生成的项目指令块改为英文，中文翻译单独维护于 docs/zh-CN。English 版本为实现依据，历史章节不恢复已报废 Channel 或手动配置流程。
+
+## 19. Hook 环境文件缺失修复（Alpha 9）
+
+启动、恢复和 compact 的宿主环境文件可能尚未创建。仅接受绝对路径，规范化已有父目录，再用 O_RDWR/O_APPEND/O_CREAT/O_NOFOLLOW/O_NONBLOCK 打开目标，新文件 0600。对打开的描述符检查普通文件及用户所有权，保留内容、补齐必要换行、重复执行不重复追加身份，finally 关闭。拒绝链接、非普通文件和缺失父目录，不初始化无关项目。
+
+全局程序升级后需显式刷新旧项目 JS bundle/固定入口；已有托管项目 hooks 若仍指向旧程序，也要按明确范围更新。插件包装脚本不变，插件版本可继续使用 Alpha 8。模拟 compact 输入属于配置与执行检查，不代表真实模型收信。

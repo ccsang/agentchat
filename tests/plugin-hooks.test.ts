@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -19,6 +19,42 @@ test("plugin startup persists real hook identity without initializing an unjoine
   expect(pluginHook(context, "SessionStart", env)).toEqual({}); pluginHook(context, "SessionStart", env);
   expect(readFileSync(path, "utf8")).toBe(`export USER_RULE='keep'\nexport AGENTCHAT_CLAUDE_SESSION_ID='${context.session_id}'\n`);
   expect(readdirSync(f.root)).toEqual([]);
+});
+test("startup, resume and compact create a missing host environment file without duplicating identity", () => {
+  for (const source of ["startup", "resume", "compact"]) {
+    const path = join(host.root, `${source}-env.sh`), context = { ...input(), source };
+    const env = { ...envFor(), CLAUDE_ENV_FILE: path };
+    expect(existsSync(path)).toBe(false);
+    expect(pluginHook(context, "SessionStart", env)).toEqual({});
+    const expected = `export AGENTCHAT_CLAUDE_SESSION_ID='${context.session_id}'\n`;
+    expect(readFileSync(path, "utf8")).toBe(expected);
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    pluginHook(context, "SessionStart", env);
+    expect(readFileSync(path, "utf8")).toBe(expected);
+  }
+  expect(readdirSync(f.root)).toEqual([]);
+});
+test("host environment writes reject links and missing parent directories", () => {
+  const target = join(host.root, "user-file"); writeFileSync(target, "preserve\n", { mode: 0o600 });
+  for (const [name, destination] of [["live", target], ["dangling", join(host.root, "absent")]] as const) {
+    const path = join(host.root, name); symlinkSync(destination, path);
+    expect(() => pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: path })).toThrow();
+  }
+  expect(readFileSync(target, "utf8")).toBe("preserve\n");
+  expect(existsSync(join(host.root, "absent"))).toBe(false);
+  const missing = join(host.root, "missing-parent");
+  expect(() => pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: join(missing, "env") })).toThrow();
+  expect(existsSync(missing)).toBe(false);
+  expect(readdirSync(f.root)).toEqual([]);
+});
+test("host environment writes reject relative paths and non-regular leaves without blocking", () => {
+  expect(() => pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: "relative-env.sh" })).toThrow("must be absolute");
+  const directory = join(host.root, "directory"); mkdirSync(directory);
+  expect(() => pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: directory })).toThrow();
+  const fifo = join(host.root, "fifo");
+  expect(spawnSync("mkfifo", [fifo], { encoding: "utf8" }).status).toBe(0);
+  expect(() => pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: fifo })).toThrow("must be regular");
+  expect(readdirSync(directory)).toEqual([]); expect(readdirSync(f.root)).toEqual([]);
 });
 test("plugin lifecycle auto-enrolls only initialized projects without requiring project hooks", async () => {
   applyInstall(await planInstall(f.project, { autoJoin: true }));

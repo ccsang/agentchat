@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { Store } from "../src/store.ts";
 import { applyInstall, planInstall } from "../src/install.ts";
 import { fixture, nativeIdentity, testEnv } from "./helpers.ts";
+import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { tryLock } from "../src/lock.ts";
 import { privateDirectory } from "../src/files.ts";
 import { cli } from "./helpers.ts";
@@ -27,6 +29,28 @@ test("explicit hook upgrade retires only managed Stop listeners and preserves bu
   expect(settings.hooks.Stop[0].hooks).toEqual([{ type: "command", command: "user-custom-hook" }]);
   const config = JSON.parse(readFileSync(join(f.project.room, "config.json"), "utf8"));
   expect(config.budget).toBe(7); expect(config.windowSeconds).toBe(600); expect(config.watchSeconds).toBeUndefined();
+});
+test("explicit runtime and managed-hook upgrade replaces stale code and handles a missing compact environment", async () => {
+  applyInstall(await planInstall(f.project, { hooks: true }));
+  const path = join(f.root, ".claude/settings.local.json"), settings = JSON.parse(readFileSync(path, "utf8"));
+  settings.hooks.SessionStart[0].hooks[0].command = "/missing-legacy-agentchat";
+  settings.hooks.Stop = [{ hooks: [{ type: "command", command: "user-hook" }] }];
+  settings.permissions = { deny: ["Bash(curl:*)"] };
+  const before = JSON.stringify(settings); writeFileSync(path, before);
+  writeFileSync(join(f.project.room, "agentchat.js"), "throw new Error('stale installed bundle');\n");
+  const plan = await planInstall(f.project, { hooks: true });
+  expect(readFileSync(path, "utf8")).toBe(before);
+  expect(plan.changes.some(change => change.path === join(f.project.room, "agentchat.js"))).toBe(true);
+  expect(plan.changes.some(change => change.path === path)).toBe(true);
+  applyInstall(plan);
+  const after = JSON.parse(readFileSync(path, "utf8")), hook = after.hooks.SessionStart[0].hooks[0];
+  expect(after.hooks.Stop).toEqual(settings.hooks.Stop); expect(after.permissions).toEqual(settings.permissions);
+  const envPath = join(f.root, "compact-env.sh"), session = randomUUID();
+  const result = spawnSync(hook.command, hook.args, { encoding: "utf8", env: testEnv({ CLAUDE_ENV_FILE: envPath, CLAUDE_CONFIG_DIR: join(f.root, "isolated-claude") }),
+    input: JSON.stringify({ cwd: f.root, session_id: session, hook_event_name: "SessionStart", source: "compact" }) });
+  expect(result.status).toBe(0); expect(readFileSync(envPath, "utf8")).toBe(`export AGENTCHAT_CLAUDE_SESSION_ID='${session}'\n`);
+  expect((await planInstall(f.project, { hooks: true })).changes).toHaveLength(0);
+  expect(existsSync(join(f.root, "AGENTS.md"))).toBe(false);
 });
 test("install is idempotent, preserves user hooks and never sets approval or inbound policy", async () => {
   mkdirSync(join(f.root, ".claude"));

@@ -43,7 +43,7 @@ bun run check
 bun test tests
 bun run build
 bun run build:release
-bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.8-darwin-arm64
+bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.9-darwin-arm64
 ```
 
 `build:release --target linux-x64` supports cross-compilation. The release workflow uses four native runners for tests, builds and standalone verification. Fresh directories, special-character paths and PATH without developer runtimes cover installation/command protection, runtime-only defaults, explicit integrations, rooms, hooks/startup notices, inbound-policy preview/backup/reversal, SQLite messaging/mark and removal. Fake clients never notify real sessions.

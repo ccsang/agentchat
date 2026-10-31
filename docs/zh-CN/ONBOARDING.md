@@ -4,7 +4,7 @@
 
 ## 当前能力与范围
 
-当前版本 `0.1.0-alpha.8`。Claude 使用版本校验的原生 socket，Codex 使用原生 queue；Channel、MCP 收件进程及专用启动器已移除。Claude 插件自动加载短 SessionStart / SessionEnd hooks。完整协作规范随 CLI 发布，以实际执行入口的 `skills get` 为准。
+当前版本 `0.1.0-alpha.9`。Claude 使用版本校验的原生 socket，Codex 使用原生 queue；Channel、MCP 收件进程及专用启动器已移除。Claude 插件自动加载短 SessionStart / SessionEnd hooks。完整协作规范随 CLI 发布，以实际执行入口的 `skills get` 为准。
 
 程序本机安装一次。默认 join / room use / install 只准备本地状态，不读取或修改 AGENTS.md、CLAUDE.md、.claude/settings.local.json 或 Git exclude；Git 项目使用 Git 元数据目录，非 Git 项目使用 .agentchat。创建和切换房间不重装程序。
 
@@ -15,8 +15,9 @@
 由 agent 操作，用户无需搬运 room、UUID 或 socket 路径：
 
 1. 优先使用通知 Read argv 数组的第一个元素，兼容旧通知的 Tool argv，再找当前项目私有 run，其次 PATH 上的 agentchat 和 `$HOME/.local/bin/agentchat`。Git 项目 run 位于 `<git common directory>/agentchat/run`，非 Git 项目位于 `<项目>/.agentchat/run`。检查实际入口 --version；本插件要求 Alpha 6 或更新版本，不继续执行旧 CLI 的 Channel / launcher 流程。
-2. 未安装或需要升级时，将 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.8/install.sh` 下载到临时目录，阅读成功下载的 HTTPS 内容后执行。安装器校验压缩包及程序，返回全局 cli 路径；不初始化业务项目，不改 shell、网关、认证或审批。支持 macOS / Linux glibc 的 arm64 / x64，无需另装 Bun / Node.js。只安装程序时，到此停止。
+2. 未安装或需要升级时，将 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.9/install.sh` 下载到临时目录，阅读成功下载的 HTTPS 内容后执行。安装器校验压缩包及程序，返回全局 cli 路径；不初始化业务项目，不改 shell、网关、认证或审批。支持 macOS / Linux glibc 的 arm64 / x64，无需另装 Bun / Node.js。只安装程序时，到此停止。
 3. 全局升级不会替换所有项目的固定入口。对需升级的旧项目，用全局新版 `--project <根目录> install` 预览，在本地入口升级范围内追加 --apply，再读取更新后项目 run 的 skills get。迁移仅更新私有运行文件和元数据，停用自有旧 Channel 启动器；旧消息、游标、预留及项目文件保留。
+   Alpha 9 修复环境文件缺失问题时，只升级全局程序还不够：旧项目 `.git/agentchat/agentchat.js` 或固定二进制入口需用全局新版 install 预览并 --apply 更新。已启用 AgentChat 托管项目 hooks 且本次要求刷新时，还需预览 `--project <根目录> install --hooks` 并应用，保留其他 hooks 和配置；只用插件 hooks 的项目不应额外安装项目副本。重复 join 或仅更新插件不会替换旧 CLI bundle。
 4. 需要后续会话自动发现工具时，按下一节安装所用客户端的用户级插件；已有插件通过宿主机制更新，并按提示重新加载或开启后续会话。CLI 与插件都需更新；CLI 不改写宿主插件缓存。
 5. 用户要求加入时，各 agent 必须在自己的原生会话执行新版 join。Codex 身份来自宿主环境；Claude 来自真实 hook 环境或自身 socket 元数据。缺失或冲突就报告，不猜最近会话、不替其他会话声明身份。检查 member、initialization、automatic_reception 和 reception。
 6. Claude join 自动尝试绑定该准确会话的受支持 socket；显式停用不会被自动打开。不支持的版本仍可加入和主动读写，但明确报告自动接收原因，不切换 Channel。新进程自己的 SessionStart 或显式 socket-config --apply 可重新绑定变更实例。正常打开 Claude 即可，无需专用恢复入口或 Channel/MCP 启用步骤。
@@ -79,6 +80,8 @@ codex plugin add agentchat@agentchat
 两端共享一份薄 skill，负责找到 CLI、检查最低版本并读取其 skills get。Claude manifest 另声明插件内的短生命周期 hooks，宿主自动加载；Codex 不加载这组 hooks。无需逐项目写 hooks，也没有 MCP 服务或额外收件进程。
 
 hook 包装脚本依次检查 AGENTCHAT_BIN_DIR、PATH、`$HOME/.local/bin/agentchat`，用 sh 调用已安装程序，不下载或安装程序、不依赖外部 Bun/Node。程序尚未安装时静默退出。SessionStart 使用宿主 JSON 中的 cwd 和 session_id，只向宿主提供的私有环境文件添加原生 UUID；不会扫描聊天记录或创建无关项目状态，子 agent 不冒充主会话。SessionEnd 清理准确会话的接收状态。
+
+启动、恢复或 compact 后，`CLAUDE_ENV_FILE` 指向的文件可能尚未创建。hook 会在已有的父目录内以仅属主可读写的权限创建该文件，保留原有内容，并避免重复追加相同身份。它拒绝符号链接和非普通文件，不会跟随链接写入，也不会创建缺失的父目录。
 
 已初始化项目要让后续主会话自动加入，可在该需求范围内预览 `install --auto-join` 并追加 --apply；这仍只写私有配置。`install --no-auto-join --apply` 停止未来自动登记，`socket-config --disable --apply` 停用当前接收。关闭 autoJoin 不会移除已有成员或消息。
 
