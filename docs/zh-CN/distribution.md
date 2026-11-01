@@ -32,7 +32,7 @@ bun run check
 bun test tests
 bun run build
 bun run build:release
-bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.11-darwin-arm64
+bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.12-darwin-arm64
 ```
 
 `build:release --target linux-x64` 等入口可交叉编译；release workflow 在四种原生 runner 上分别运行测试、构建和独立程序验收。验收使用全新目录、带空格/引号的路径及不含开发工具的 PATH，检查程序安装与同名命令保护、默认加入不改项目文件、显式可选集成、后续加入、房间切换、hooks、SQLite 收发/mark 和卸载，不向真实会话发通知。
@@ -61,3 +61,5 @@ Alpha 使用固定版本下载链接，不依赖 GitHub 的 latest Release 跳�
 Alpha 10 的已有准确会话在 autoJoin=false 时仍恢复所选房间，新会话默认不加入。升级 CLI 及受影响项目入口/已有托管 hooks 即可，Alpha 8 插件保持兼容。运行中会话需由宿主真实触发 SessionStart，不能伪造 hook 或重放旧通知。
 
 Alpha 11 将 Claude 精确版本白名单改为 2.1.312 最低基线，无产品版本上限。升级全局 CLI 及指定项目固定入口/已有托管 hooks，使加入、恢复和通知校验采用新规则；薄插件不变，协议和客户端不兼容分别报告。
+
+Alpha 12 新增脱敏的陈旧绑定/连接诊断、准确成员修复指令、被动生命周期观察，以及 Codex queue 命令能力与 nonce 证明分离。升级全局 CLI 及指定项目入口/已有托管 hooks；诊断不安装 hooks、不发探针、不重放通知，薄插件不变。

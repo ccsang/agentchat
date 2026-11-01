@@ -8,6 +8,7 @@ import { integrationDir } from "./project.ts";
 import { sessionId } from "./identity.ts";
 import { legacyMember } from "./rooms.ts";
 import { pause, paused } from "./runtime.ts";
+import { peerFailure } from "./reception-diagnostics.ts";
 
 function memberId(member: Member): string {
   requireThat(/^m_[0-9a-f-]{36}$/.test(member.id), "E_MEMBER", "Invalid member identifier"); return member.id;
@@ -55,11 +56,11 @@ export function automaticSocket(project: Project, member: Member, env: NodeJS.Pr
       catch (error) {
         if (!sessionStart) throw error;
         const current = discoverPeer(project, member, env);
-        requireThat(current.pid === process.ppid, "E_PEER", "Changed native process requires its own SessionStart hook or explicit socket-config rebind");
+        requireThat(current.pid === process.ppid, "E_PEER_REBIND", "Changed native process requires its own SessionStart hook or explicit socket-config rebind");
       }
     }
     return { ...configureSocket(project, member, true, false, env), enabled: true, configured: true };
-  } catch (error) { return { enabled: false, state: "unavailable", reason: (error as Error).message, code: (error as { code?: string }).code }; }
+  } catch (error) { const failure = peerFailure(error, "validation"); return { enabled: false, state: "unavailable", reason: failure.reason, code: failure.code }; }
 }
 export function configureSocket(project: Project, member: Member, apply: boolean, disable = false, env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
   requireThat(member.runtime === "claude", "E_IDENTITY", "Native socket experiments require an exact registered Claude member");

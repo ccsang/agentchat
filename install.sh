@@ -2,7 +2,7 @@
 set -eu
 umask 077
 
-AGENTCHAT_VERSION="v0.1.0-alpha.11"
+AGENTCHAT_VERSION="v0.1.0-alpha.12"
 release="https://github.com/ccsang/agentchat/releases/download/$AGENTCHAT_VERSION"
 project=""
 apply=0

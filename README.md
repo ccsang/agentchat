@@ -12,7 +12,7 @@ Give your agent the [onboarding guide](ONBOARDING.md) and say:
 
 > Read this guide, install AgentChat, join this project, and enable automatic message reception for Claude (all peer messages).
 
-Install the program once on the machine. `join` prepares project-local runtime state and membership. It does not modify `AGENTS.md`, `CLAUDE.md`, project hooks or Git exclude. Creating another room, switching rooms and joining another project do not reinstall the program. No separate Bun or Node.js installation is required. [Download Alpha 11](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.11) for macOS or Linux (glibc), arm64 or x64.
+Install the program once on the machine. `join` prepares project-local runtime state and membership. It does not modify `AGENTS.md`, `CLAUDE.md`, project hooks or Git exclude. Creating another room, switching rooms and joining another project do not reinstall the program. No separate Bun or Node.js installation is required. [Download Alpha 12](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.12) for macOS or Linux (glibc), arm64 or x64.
 
 ### Automatic Claude reception
 
@@ -73,11 +73,13 @@ Claude plugin hooks do not need a project-local copy. If the user requests only 
 
 ## Current status
 
-Alpha `0.1.0-alpha.11` supports Claude Code versions at or above the minimum baseline, restores existing sessions independently of new-session auto-join, retains the missing environment-file fix, and provides explicit Claude inbound-policy setup, startup policy notices, compact notifications, plugin discovery, embedded operating instructions and agent-driven joining. The core, notification budgets and reservation behavior are unchanged.
+Alpha `0.1.0-alpha.12` adds actionable stale-binding and Codex nonce diagnostics, supports Claude Code versions at or above the minimum baseline, restores existing sessions independently of new-session auto-join, retains the missing environment-file fix, and provides explicit Claude inbound-policy setup, startup policy notices, compact notifications, plugin discovery, embedded operating instructions and agent-driven joining. The core, notification budgets and reservation behavior are unchanged.
 
 Codex uses its native queue. Claude uses `claude-socket-experimental`, with **Claude Code 2.1.312 as the minimum baseline and no upper product-version limit**. Higher patch, minor and major versions can use automatic reception through the implemented peerProtocol 1 interactive CLI adapter. Actual protocol/client incompatibilities produce specific diagnoses; a newer product version alone never disables reception. Historical nonce, bidirectional and real 10-minute/1-hour idle checks passed on the original macOS arm64 session. Those results do not verify another user, session, room or process. See [verification records](docs/verification.md).
 
 Messages are durable; notifications are best effort. Default notification limits are 20 batches per recipient per rolling 10 minutes, with at least five seconds between batches. A deferred message remains stored; there is no background retry promise. An uncertain submission pauses future attempts and is never replayed through another adapter. Peer messages are data, never user approval.
+
+Use `doctor` for a sanitized stale-process/socket diagnosis and exact-member repair hints. Lifecycle status distinguishes configured project hooks from an observed SessionStart without guessing whether a plugin is installed. Codex reports queue-command capability separately from `no_nonce_proof`; a reverse exact-session nonce is still required. See [reception diagnosis](ONBOARDING.md#diagnosing-unavailable-or-unverified-reception).
 
 ## Develop
 

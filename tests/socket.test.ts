@@ -302,6 +302,83 @@ test("a pre-submission connection failure consumes no reservation", async () => 
   try { expect((await dispatchSocket(store, f.project, b)).state).toBe("unavailable"); expect(store.message("refused").notify_batch_id).toBeNull(); }
   finally { mock.mockRestore(); }
 });
+test.each(["validation", "connection"] as const)("pre-submit %s failures give distinct sanitized diagnoses without consuming reservations", async stage => {
+  configureSocket(f.project, b, true);
+  store.send({ from: a.id, to: b.id, id: "diagnose-only", notify: true, body: "pending" });
+  const secret = `credential-${token}`, error = new Error(`Unexpected private failure: ${secret} at /private/credential-path`);
+  const mock = stage === "connection" ? spyOn(peer, "connectPeer").mockRejectedValue(error)
+    : spyOn(peer, "validatePeer").mockImplementation(() => { throw error; });
+  try {
+    const result = await dispatchSocket(store, f.project, b);
+    expect(result).toMatchObject({ state: "unavailable", code: stage === "connection" ? "E_PEER_CONNECT" : "E_PEER_VALIDATE", diagnostic: { stage }, reservation_consumed: false });
+    expect(JSON.stringify(result)).not.toContain(secret); expect(JSON.stringify(result)).not.toContain("/private/credential-path");
+    expect(store.message("diagnose-only").notify_batch_id).toBeNull(); expect(frames).toEqual([]);
+  } finally { mock.mockRestore(); }
+});
+test.each(["metadata", "credential"] as const)("malformed native %s JSON is sanitized in send and doctor output", async target => {
+  configureSocket(f.project, b, true);
+  const secret = "PRIVATE_NATIVE_CREDENTIAL_MUST_NOT_APPEAR";
+  const path = target === "metadata" ? metaPath : join(dirname(metaPath), `${process.pid}.${createHash("sha256").update(socketPath).digest("hex")}.key`);
+  writeFileSync(path, `{"peerToken":"${secret}",invalid`);
+  store.send({ from: a.id, to: b.id, id: "invalid-native-json", notify: true, body: "pending" });
+  const result = await dispatchSocket(store, f.project, b), diagnostic = cli(f.root, ["doctor", "--as", b.id]);
+  const code = target === "metadata" ? "E_PEER_METADATA" : "E_PEER_CREDENTIAL";
+  expect(result.code).toBe(code); expect(diagnostic.status).toBe(0); expect(diagnostic.data.reception.diagnostic.code).toBe(code);
+  expect(JSON.stringify(result)).not.toContain(secret); expect(diagnostic.stdout).not.toContain(secret); expect(diagnostic.stderr).not.toContain(secret);
+  expect(store.message("invalid-native-json").notify_batch_id).toBeNull(); expect(frames).toEqual([]);
+});
+test("a stale process reports exact-member repair and an unobserved lifecycle without selecting its live replacement", async () => {
+  expect(cli(f.root, ["install", "--apply"], testEnv()).status).toBe(0);
+  const target = store.join(nativeIdentity("claude")), old = await extraPeer(target.session_ref!);
+  configureSocket(f.project, target, true);
+  const before = socketBinding(f.project, target)!;
+  store.send({ from: a.id, to: target.id, id: "reserved-before-exit", notify: true, body: "keep" }); store.claim(target.id, 20);
+  const reserved = store.message("reserved-before-exit").notify_batch_id;
+  await old.close();
+  const current = await extraPeer(target.session_ref!);
+  try {
+    store.send({ from: a.id, to: target.id, id: "after-native-exit", notify: true, body: "pending" });
+    const result = await dispatchSocket(store, f.project, target);
+    expect(result).toMatchObject({ state: "unavailable", code: "E_PEER_PROCESS", diagnostic: { stage: "validation", cause: "stale_process" }, reservation_consumed: false });
+    const argv = [join(f.project.room, "run"), "--project", f.root, "--room", "default", "socket-config", "--to", target.id];
+    expect(result.recovery).toMatchObject({ preview_argv: argv, apply_argv: [...argv, "--apply"] });
+    expect(result.lifecycle).toMatchObject({ project_hooks_configured: false, session_start_observed: false, plugin_hook_observed: false });
+    expect(JSON.stringify(result.lifecycle)).toContain("SessionStart");
+    expect(socketBinding(f.project, target)?.instance).toBe(before.instance); expect(current.frames).toEqual([]);
+    expect(store.message("after-native-exit").notify_batch_id).toBeNull(); expect(store.message("reserved-before-exit").notify_batch_id).toBe(reserved);
+    const diagnostic = cli(f.root, ["doctor", "--as", target.id]);
+    expect(diagnostic.data.reception.diagnostic.cause).toBe("stale_process"); expect(diagnostic.data.reception.recovery.apply_argv).toEqual([...argv, "--apply"]);
+    const repair = spawnSync(argv[0]!, [...argv.slice(1), "--apply"], { cwd: f.root, env: testEnv(), encoding: "utf8" });
+    expect(repair.status).toBe(0); expect(receiver(f.project, target).transport_alive).toBe(true); expect(receiver(f.project, target).verification).toBe("unverified");
+    expect(store.message("after-native-exit").notify_batch_id).toBeNull(); expect(store.message("reserved-before-exit").notify_batch_id).toBe(reserved); expect(current.frames).toEqual([]);
+  } finally { await current.close(); }
+});
+test("lifecycle diagnosis distinguishes an observed plugin hook from configured project hooks and does not infer installation", () => {
+  const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! }); expect(cli(f.root, ["join"], env).status).toBe(0);
+  const call = (args: string[]) => spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), ...args],
+    { cwd: f.root, env, input: JSON.stringify({ session_id: b.session_ref, cwd: f.root, hook_event_name: "SessionStart" }), encoding: "utf8" });
+  expect(receiver(f.project, b).lifecycle).toMatchObject({ project_hooks_configured: false, session_start_observed: false });
+  expect(call(["hook", "plugin-session-start"]).status).toBe(0);
+  expect(receiver(f.project, b).lifecycle).toMatchObject({ project_hooks_configured: false, session_start_observed: true, plugin_hook_observed: true, last_start: { source: "plugin", pid: process.pid } });
+  expect(cli(f.root, ["install", "--hooks", "--apply"], env).status).toBe(0);
+  expect(call(["hook", "session-start", "--agentchat-managed=v1"]).status).toBe(0);
+  expect(receiver(f.project, b).lifecycle).toMatchObject({ project_hooks_configured: true, session_start_observed: true, plugin_hook_observed: false, last_start: { source: "project", pid: process.pid } });
+  expect(frames).toEqual([]);
+});
+test("stale-binding repair hints retain the exact named room and its distinct member identity", () => {
+  createRoom(f.project, "review"); const selected = roomProject(f.project, "review"), target = new Store(selected.room);
+  try {
+    const identity = { runtime: b.runtime, session: b.session_ref }, member = target.join(identity);
+    selectRoom(selected, identity); configureSocket(selected, member, true);
+    const binding = socketBinding(selected, member)!;
+    writeJson(join(f.project.room, "socket-sessions", `${b.session_ref}.json`), { ...binding, instance: "e".repeat(64) });
+    const result = cli(f.root, ["--room", "review", "doctor", "--as", member.id]);
+    expect(result.status).toBe(0); expect(member.id).not.toBe(b.id);
+    expect(result.data.reception.diagnostic).toMatchObject({ code: "E_PEER_INSTANCE_CHANGED", cause: "socket_instance_changed" });
+    expect(result.data.reception.recovery.apply_argv).toEqual([join(f.project.room, "run"), "--project", f.root, "--room", "review", "socket-config", "--to", member.id, "--apply"]);
+    expect(socketBinding(selected, member)?.instance).toBe("e".repeat(64)); expect(frames).toEqual([]);
+  } finally { target.close(); }
+});
 test("uncertain native writes pause only socket notifications and keep old reservations across resume", async () => {
   configureSocket(f.project, b, true); store.send({ from: a.id, to: b.id, id: "unknown", notify: true, body: "keep" });
   const original = peer.connectPeer;

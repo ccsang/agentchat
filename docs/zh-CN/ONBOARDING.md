@@ -4,7 +4,7 @@
 
 ## 当前能力与范围
 
-当前版本 `0.1.0-alpha.11`。Claude 使用版本校验的原生 socket，Codex 使用原生 queue；Channel、MCP 收件进程及专用启动器已移除。Claude 插件自动加载短 SessionStart / SessionEnd hooks。完整协作规范随 CLI 发布，以实际执行入口的 `skills get` 为准。
+当前版本 `0.1.0-alpha.12`。Claude 使用版本校验的原生 socket，Codex 使用原生 queue；Channel、MCP 收件进程及专用启动器已移除。Claude 插件自动加载短 SessionStart / SessionEnd hooks。完整协作规范随 CLI 发布，以实际执行入口的 `skills get` 为准。
 
 程序本机安装一次。默认 join / room use / install 只准备本地状态，不读取或修改 AGENTS.md、CLAUDE.md、.claude/settings.local.json 或 Git exclude；Git 项目使用 Git 元数据目录，非 Git 项目使用 .agentchat。创建和切换房间不重装程序。
 
@@ -15,7 +15,7 @@
 由 agent 操作，用户无需搬运 room、UUID 或 socket 路径：
 
 1. 优先使用通知 Read argv 数组的第一个元素，兼容旧通知的 Tool argv，再找当前项目私有 run，其次 PATH 上的 agentchat 和 `$HOME/.local/bin/agentchat`。Git 项目 run 位于 `<git common directory>/agentchat/run`，非 Git 项目位于 `<项目>/.agentchat/run`。检查实际入口 --version；本插件要求 Alpha 6 或更新版本，不继续执行旧 CLI 的 Channel / launcher 流程。
-2. 未安装或需要升级时，将 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.11/install.sh` 下载到临时目录，阅读成功下载的 HTTPS 内容后执行。安装器校验压缩包及程序，返回全局 cli 路径；不初始化业务项目，不改 shell、网关、认证或审批。支持 macOS / Linux glibc 的 arm64 / x64，无需另装 Bun / Node.js。只安装程序时，到此停止。
+2. 未安装或需要升级时，将 `https://raw.githubusercontent.com/ccsang/agentchat/v0.1.0-alpha.12/install.sh` 下载到临时目录，阅读成功下载的 HTTPS 内容后执行。安装器校验压缩包及程序，返回全局 cli 路径；不初始化业务项目，不改 shell、网关、认证或审批。支持 macOS / Linux glibc 的 arm64 / x64，无需另装 Bun / Node.js。只安装程序时，到此停止。
 3. 全局升级不会替换所有项目的固定入口。对需升级的旧项目，用全局新版 `--project <根目录> install` 预览，在本地入口升级范围内追加 --apply，再读取更新后项目 run 的 skills get。迁移仅更新私有运行文件和元数据，停用自有旧 Channel 启动器；旧消息、游标、预留及项目文件保留。
    Alpha 9 修复环境文件缺失问题时，只升级全局程序还不够：旧项目 `.git/agentchat/agentchat.js` 或固定二进制入口需用全局新版 install 预览并 --apply 更新。已启用 AgentChat 托管项目 hooks 且本次要求刷新时，还需预览 `--project <根目录> install --hooks` 并应用，保留其他 hooks 和配置；只用插件 hooks 的项目不应额外安装项目副本。重复 join 或仅更新插件不会替换旧 CLI bundle。
 4. 需要后续会话自动发现工具时，按下一节安装所用客户端的用户级插件；已有插件通过宿主机制更新，并按提示重新加载或开启后续会话。CLI 与插件都需更新；CLI 不改写宿主插件缓存。
@@ -24,6 +24,16 @@
 7. 用户要求自动收信时先按下节设置用户级 Accept，再加入后读取同一实际入口的 skills get 并按规范收发；doctor 查看接收状态。probe 会向真实会话发通知、可能产生模型调用，仅在用户授权的联调范围内使用。只有当前准确实例回传新 nonce 才算自动收信已验证；安装、hook 执行、socket 写出都不是该证据。
 
 Claude Code 2.1.312 是最低支持基线，不是白名单或最高版本。更高补丁、次版本和主版本均可通过 peerProtocol 1 交互 CLI 适配器自动接收，无需逐版本批准；预发布版本按语义版本顺序比较，构建元数据不改变顺序。遇到实际兼容问题应诊断修复，不因产品版本较新而禁用。E_PEER_VERSION 表示低于基线或格式损坏，E_PEER_PROTOCOL 表示协议不兼容，E_PEER_KIND 表示客户端类型不兼容。历史真实验收仅覆盖原 macOS arm64 会话，版本允许接入、安装成功和 socket 写出都不证明新实例的模型已收信；保留 claude-socket-experimental 标识。
+
+## 接收不可用或未验证时的诊断
+
+Claude 的提交前失败区分 diagnostic.stage 为 validation 或 connection，返回脱敏 code/cause 和 reservation_consumed=false；doctor 显示同一校验原因。旧 PID 已退出为 E_PEER_PROCESS，socket 实例变化为 E_PEER_INSTANCE_CHANGED，连接失败为 E_PEER_CONNECT，不返回原始解析异常或 peer 凭据。
+
+明确要求且适合修复准确成员时，先检查 recovery.preview_argv，再使用 recovery.apply_argv；均保留原项目、房间和成员。修复重新校验准确活跃会话，保留消息、游标、预留及 unknown 暂停，不发送或重放通知。不猜其他进程、不重试结果不确定的旧尝试。
+
+生命周期状态分别显示 project_hooks_configured、session_start_observed、plugin_hook_observed 和最后一次观察到的 SessionStart；plugin_hook_observed 描述该最新事件的来源，并非已装插件清单。没有观察记录不代表插件未安装，配置了 hooks 也不代表当前进程已经加载。陈旧绑定缺少观察时，提示安装/加载 Claude 插件的 SessionStart/SessionEnd，或明确选择项目 hooks；旧会话可按范围显式修复，但观察记录须由下次真实宿主事件建立，诊断不安装 hooks、不伪造事件。
+
+Codex 的 unverified / reason_code=no_nonce_proof 表示尚无准确会话和成员的有效 nonce 回复；queue 回执或已投递通知不等于模型处理。doctor 单独检查 queue 命令能力，transport.state=available 仅表示支持所需参数，transport_alive 和 exact_session_reachable 均保持 null。授权联调时，由另一 agent 按 verification_action.argv 向原 Codex 发送新的反向探针，再由原生会话自己回复。查看 doctor/status 不会发探针，也不会凭命令可用标记 verified。
 
 ## Claude 入站策略与启动提示
 

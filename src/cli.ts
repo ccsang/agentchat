@@ -4,8 +4,8 @@ import { discoverProject } from "./project.ts";
 import { identify, optionalIdentity } from "./identity.ts";
 import { Store } from "./store.ts";
 import { errorResult, requireThat } from "./errors.ts";
-import { receiver, saveState, state } from "./runtime.ts";
-import { notifyMember, paused, resume } from "./notify.ts";
+import { policy, receiver, saveState, state } from "./runtime.ts";
+import { inspectCodex, notifyMember, paused, resume } from "./notify.ts";
 import { applyInstall, ensureProject, planInstall, preview } from "./install.ts";
 import { endHook, pluginHook, registerHook, waitHook } from "./hooks.ts";
 import type { HookInput } from "./hooks.ts";
@@ -61,7 +61,7 @@ async function joinProject(project: Project, identity: Identity, name?: string):
       selectRoom(project, identity);
       const automatic = member.runtime === "claude" ? automaticSocket(project, member) : undefined;
       if (automatic) saveState(project, { ...state(project, member), session: member.session_ref!, active: true, memberId: member.id,
-        error: automatic.state === "unavailable" ? { reason: String(automatic.reason), at: Date.now() } : undefined });
+        error: automatic.state === "unavailable" ? { reason: String(automatic.reason), code: automatic.code as string | undefined, at: Date.now() } : undefined });
       return { ok: true, joined: true, project, room: roomName(project), member, members: store.members(), initialization, automatic_reception: automatic, reception: receiver(project, member) };
     } finally { store.close(); }
   });
@@ -172,7 +172,19 @@ export async function runCli(args: readonly string[]): Promise<number> {
       if (member?.runtime === "claude") {
         try { claudeInbound = claudeInboundStatus(); } catch (error) { claudeInbound = errorResult(error); }
       }
-      result = { ok: true, project, identity, joined: !!member, member, diagnostic, reception: member ? receiver(project, member) : null,
+      let reception = member ? receiver(project, member) : null;
+      if (member?.runtime === "codex") {
+        let transport: Record<string, unknown>;
+        try {
+          const queue = inspectCodex(policy(project).codexBin);
+          transport = { state: queue ? "available" : "unavailable", scope: "command_capability", exact_session_reachable: null,
+            host_version: queue?.version ?? null,
+            reason: queue ? "A compatible queue command is available; exact-session reachability and model processing are not established."
+              : "No compatible native queue command was found; no notification was sent." };
+        } catch { transport = { state: "unknown", scope: "command_capability", exact_session_reachable: null, reason: "Queue capability configuration could not be inspected." }; }
+        reception = { ...reception, transport };
+      }
+      result = { ok: true, project, identity, joined: !!member, member, diagnostic, reception,
         ...(claudeInbound ? { claude_inbound: claudeInbound } : {}) };
     } else {
       requireThat(["join", "members", "send", "read", "notify", "probe", "socket-config"].includes(command ?? ""), "E_USAGE", "Unknown command; use --help");

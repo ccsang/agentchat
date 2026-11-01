@@ -39,7 +39,7 @@ export function processStart(pid: number): string {
   const result = spawnSync("/bin/ps", ["-o", "lstart=", "-p", String(pid)], {
     env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, encoding: "utf8", timeout: 1500, killSignal: "SIGKILL",
   });
-  requireThat(result.status === 0 && result.stdout.trim(), "E_PEER", "The exact native Claude process is no longer available");
+  requireThat(result.status === 0 && result.stdout.trim(), "E_PEER_PROCESS", "The exact native Claude process is no longer available");
   return result.stdout.trim().replace(/\s+/g, " ");
 }
 function ownedDirectory(path: string, privateOnly: boolean): void {
@@ -49,12 +49,17 @@ function ownedDirectory(path: string, privateOnly: boolean): void {
   requireThat(!privateOnly || (info.mode & 0o077) === 0, "E_PERMISSIONS", "Peer socket directory must be owner-only");
 }
 function record(path: string): PeerRecord {
-  ownedDirectory(dirname(path), false); regularFile(path, false);
-  requireThat((lstatSync(path).mode & 0o022) === 0, "E_PERMISSIONS", "Peer metadata must not be writable by another user");
-  requireThat(lstatSync(path).size <= 65536, "E_PEER", "Peer metadata is too large");
-  const value = JSON.parse(readFileSync(path, "utf8")) as PeerRecord;
-  requireThat(Number.isSafeInteger(value.pid) && value.pid > 1 && basename(path) === `${value.pid}.json`, "E_PEER", "Peer metadata PID mismatch");
-  return value;
+  try {
+    ownedDirectory(dirname(path), false); regularFile(path, false);
+    requireThat((lstatSync(path).mode & 0o022) === 0, "E_PERMISSIONS", "Peer metadata must not be writable by another user");
+    requireThat(lstatSync(path).size <= 65536, "E_PEER_METADATA", "Peer metadata is too large");
+    const value = JSON.parse(readFileSync(path, "utf8")) as PeerRecord;
+    requireThat(Number.isSafeInteger(value.pid) && value.pid > 1 && basename(path) === `${value.pid}.json`, "E_PEER", "Peer metadata PID mismatch");
+    return value;
+  } catch (error) {
+    if (error instanceof ChatError) throw error;
+    throw new ChatError("E_PEER_METADATA", "Native peer metadata is missing, unreadable or malformed");
+  }
 }
 function inspect(project: Project, member: Member, path: string, expected?: PeerBinding): PeerBinding {
   requireThat(process.platform === "darwin" || process.platform === "linux", "E_PLATFORM", "Experimental native sockets support macOS/Linux only");
@@ -64,7 +69,7 @@ function inspect(project: Project, member: Member, path: string, expected?: Peer
   requireThat(value.peerProtocol === 1, "E_PEER_PROTOCOL", "Incompatible native peerProtocol; this adapter implements peerProtocol 1");
   requireThat(value.kind === "interactive" && value.entrypoint === "cli", "E_PEER_KIND", "Native socket reception requires an interactive Claude CLI session");
   requireThat(typeof value.cwd === "string" && (expected?.projectDir === integrationDir(project) && expected.cwd === value.cwd || integrationDir(discoverProject(value.cwd)) === integrationDir(project)), "E_PROJECT", "Native Claude peer belongs to another project");
-  requireThat(typeof value.procStart === "string" && value.procStart.trim().replace(/\s+/g, " ") === processStart(value.pid), "E_PEER", "Native PID was reused or its process-start evidence changed");
+  requireThat(typeof value.procStart === "string" && value.procStart.trim().replace(/\s+/g, " ") === processStart(value.pid), "E_PEER_PROCESS_CHANGED", "Native PID was reused or its process-start evidence changed");
   const socketPath = value.messagingSocketPath;
   requireThat(typeof socketPath === "string" && isAbsolute(socketPath) && basename(socketPath) === `${value.pid}.sock`, "E_PEER", "Native socket path does not match the exact peer PID");
   ownedDirectory(dirname(socketPath), true);
@@ -75,20 +80,25 @@ function inspect(project: Project, member: Member, path: string, expected?: Peer
     instance: "", configuredAt: expected?.configuredAt ?? Date.now() };
   binding.instance = createHash("sha256").update(JSON.stringify([binding.pid, binding.session, binding.procStart, binding.version,
     binding.realSocketPath, binding.socketDev, binding.socketIno])).digest("hex");
-  requireThat(!expected || (expected.instance === binding.instance && expected.socketPath === socketPath), "E_PEER", "Native socket instance changed; explicitly rebind and verify before sending");
+  requireThat(!expected || (expected.instance === binding.instance && expected.socketPath === socketPath), "E_PEER_INSTANCE_CHANGED", "Native socket instance changed; explicitly rebind and verify before sending");
   peerToken(binding);
   return binding;
 }
 export function peerToken(binding: PeerBinding): string {
-  // 2.1.312 hashes the published path, not macOS's /private/tmp canonical alias.
-  const hash = createHash("sha256").update(binding.socketPath).digest("hex");
-  const path = join(dirname(binding.metadataPath), `${binding.pid}.${hash}.key`);
-  regularFile(path);
-  requireThat(lstatSync(path).size <= 4096, "E_PEER", "Native peer key record is too large");
-  const value = JSON.parse(readFileSync(path, "utf8")) as { peerToken?: string; procStart?: string };
-  requireThat(typeof value.peerToken === "string" && /^[0-9a-f]{32}$/.test(value.peerToken) && value.procStart === binding.procStart,
-    "E_PEER", "Native peer token is missing or belongs to another process instance");
-  return value.peerToken;
+  try {
+    // 2.1.312 hashes the published path, not macOS's /private/tmp canonical alias.
+    const hash = createHash("sha256").update(binding.socketPath).digest("hex");
+    const path = join(dirname(binding.metadataPath), `${binding.pid}.${hash}.key`);
+    regularFile(path);
+    requireThat(lstatSync(path).size <= 4096, "E_PEER_CREDENTIAL", "Native peer key record is too large");
+    const value = JSON.parse(readFileSync(path, "utf8")) as { peerToken?: string; procStart?: string };
+    requireThat(typeof value.peerToken === "string" && /^[0-9a-f]{32}$/.test(value.peerToken) && value.procStart === binding.procStart,
+      "E_PEER_CREDENTIAL", "Native peer token is missing or belongs to another process instance");
+    return value.peerToken;
+  } catch (error) {
+    if (error instanceof ChatError) throw error;
+    throw new ChatError("E_PEER_CREDENTIAL", "Native peer credential is missing, unreadable or malformed");
+  }
 }
 export function validatePeer(project: Project, member: Member, binding: PeerBinding): PeerBinding {
   return inspect(project, member, binding.metadataPath, binding);
@@ -119,9 +129,9 @@ export function discoverPeer(project: Project, member: Member, env: NodeJS.Proce
     } catch { /* A stale advertisement is never selected as a replacement. */ }
     try { matches.push(inspect(project, member, path)); } catch (error) { diagnostic = error; }
   }
-  requireThat(liveMatches <= 1 && matches.length <= 1, "E_PEER", "More than one live process advertises this exact native session; refuse ambiguous routing");
+  requireThat(liveMatches <= 1 && matches.length <= 1, "E_PEER_AMBIGUOUS", "More than one live process advertises this exact native session; refuse ambiguous routing");
   if (!matches.length && diagnostic instanceof Error) throw diagnostic;
-  requireThat(matches.length === 1, "E_PEER", "No verified live peer matches this exact registered session; no recent-session guessing");
+  requireThat(matches.length === 1, "E_PEER_NOT_FOUND", "No verified live peer matches this exact registered session; no recent-session guessing");
   return matches[0]!;
 }
 export function peerFrame(content: string, messageId: string): string {

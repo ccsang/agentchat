@@ -11,13 +11,16 @@ import { integrationDir } from "./project.ts";
 import { installation } from "./workspace.ts";
 import { legacyMember, memberRoomSelected, resolveRoom, roomName } from "./rooms.ts";
 import { sessionId } from "./identity.ts";
+import { lifecycleStatus, peerFailure, receptionCommand, socketRecovery } from "./reception-diagnostics.ts";
+import type { LifecycleObservation } from "./reception-diagnostics.ts";
 
 export interface SessionState {
   session: string; active: boolean; memberId?: string;
   listener?: { pid: number; token: string; expiresAt: number; mode: "hook" | "channel"; launchId?: string;
     startedAt?: number; routingVersion?: number; retry?: { reason: string; retryAt: number } };
   proof?: { nonce: string; replyId: string; verifiedAt: number; hostVersion: string; adapter: string; receiverToken?: string; launchId?: string };
-  error?: { reason: string; at: number };
+  error?: { reason: string; at: number; code?: string };
+  lifecycle?: LifecycleObservation;
 }
 export function policy(project: Project): Policy {
   const old = readJson<Partial<Policy>>(join(integrationDir(project), "config.json"));
@@ -45,15 +48,25 @@ export function receiver(project: Project, member: Member, now = Date.now()): Re
   if (!memberRoomSelected(project, member)) return { mode: member.runtime === "codex" ? "codex-queue" : SOCKET_ADAPTER,
     state: "room_not_selected", transport_alive: false, verification: "unverified", manual_read_available: true, reason: "This native session selected another room; messages remain readable" };
   const value = state(project, member);
-  if (member.runtime === "codex") return { mode: "codex-queue", state: value?.proof ? "verified" : "unverified", evidence: value?.proof ?? null };
+  if (member.runtime === "codex") {
+    const proof = value?.proof, verified = !!proof && proof.adapter === "codex-queue" && value?.session === member.session_ref && value.memberId === member.id
+      && typeof proof.nonce === "string" && !!proof.nonce && typeof proof.replyId === "string" && !!proof.replyId && Number.isFinite(proof.verifiedAt) && proof.verifiedAt > 0;
+    return { mode: "codex-queue", state: verified ? "verified" : "unverified", verification: verified ? "exact_session_nonce" : "unverified",
+      reason_code: verified ? "nonce_verified" : "no_nonce_proof", transport_alive: null,
+      transport: { state: "not_checked", scope: "command_capability", exact_session_reachable: null },
+      reason: verified ? "This exact native Codex session returned its nonce." : "No valid exact-session nonce reply has been recorded; a queue receipt or delivered notification is not model-processing proof.",
+      evidence: verified ? proof : null,
+      ...(!verified ? { verification_action: { argv: receptionCommand(project, member, "probe"), requires_authorized_probe: true,
+        hint: "Within authorized testing, ask the other agent to send a fresh reverse probe to this exact Codex member, then reply from this native Codex session. This diagnostic sends no notification." } } : {}) };
+  }
   const native = socketBinding(project, member), stopped = paused(project, member), disabled = socketDisabled(project, member) || !!native && !native.enabled;
-  let alive = false, reason = value?.error?.reason;
+  let alive = false, failure = value?.error ? peerFailure({ code: value.error.code }, "validation") : undefined;
   if (native?.enabled && !disabled) {
     try {
       requireThat(!uninstalled(project), "E_CONFIG", "Project integration was uninstalled");
       requireThat(value?.active !== false, "E_RECEIVER", "The native session ended");
-      validatePeer(project, member, native); alive = true;
-    } catch (error) { reason = (error as Error).message; }
+      validatePeer(project, member, native); alive = true; failure = undefined;
+    } catch (error) { failure = peerFailure(error, "validation"); }
   }
   let limits: unknown = null, limitReason = "ready", degraded = false;
   if (alive) {
@@ -69,7 +82,10 @@ export function receiver(project: Project, member: Member, now = Date.now()): Re
     state: stopped ? "paused" : !alive ? disabled ? "disabled" : "inactive" : degraded ? "degraded" : limitReason !== "ready" ? "rate_limited" : verified ? "verified" : "armed_unverified",
     transport_alive: alive, verification: verified && alive ? "current_socket" : "unverified", manual_read_available: true,
     receiver_instance: native?.instance ?? null, lease_expires_at: null,
-    reason: stopped?.reason ?? (!alive ? disabled ? "Native socket reception was explicitly disabled" : reason ?? "Run join to bind this session's supported native socket; Channel is retired" : degraded ? "Database temporarily unavailable" : limitReason !== "ready" ? limitReason : verified ? "This exact native receiver returned its nonce" : "Native inbox is present; model processing still requires a nonce reply"),
+    reason: stopped?.reason ?? (!alive ? disabled ? "Native socket reception was explicitly disabled" : failure?.reason ?? "Run join to bind this session's supported native socket; Channel is retired" : degraded ? "Database temporarily unavailable" : limitReason !== "ready" ? limitReason : verified ? "This exact native receiver returned its nonce" : "Native inbox is present; model processing still requires a nonce reply"),
+    ...(failure && !disabled ? { diagnostic: { code: failure.code, stage: failure.stage, cause: failure.cause },
+      ...(failure.rebind ? { recovery: socketRecovery(project, member) } : {}) } : {}),
+    lifecycle: lifecycleStatus(project, value?.lifecycle, !disabled && !!failure?.stale),
     limits, evidence: verified && alive ? proof : null, historical_evidence: value?.proof ?? null };
 }
 function pausePath(project: Project, member: Member, adapter?: string): string {

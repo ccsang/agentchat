@@ -4,6 +4,14 @@ English | [Chinese translation](zh-CN/implementation-plan.md)
 
 Use the current self-onboarding design. Historical milestones below record completed work; Channel and timed hooks are retired and must not be restored as setup instructions. Native model tests remain separate from synthetic/unit/package checks.
 
+## Alpha 12: actionable reception diagnostics (issue #12)
+
+- [x] Separate sanitized pre-submit validation/connection failures and report exact-member repair argv without new reservations, process selection or replay.
+- [x] Distinguish Codex queue command capability from missing exact-session nonce proof and provide an authorized reverse-probe hint.
+- [x] Record valid native SessionStart observations and distinguish them from configured project hooks; never guess plugin installation or fabricate activation.
+- [x] Cover stale/live replacement separation, malformed native JSON, credential redaction, named-room routing, explicit repair, receipt-only Codex status and proof isolation with synthetic fixtures.
+- [x] Verify compiled packages and synchronize English/Chinese onboarding; record tagged public upgrades separately.
+
 ## Alpha 11: minimum Claude version with no upper bound
 
 - [x] Treat Claude Code 2.1.312 as the minimum baseline; admit higher patch/minor/major versions using semantic ordering.

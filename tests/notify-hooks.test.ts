@@ -6,7 +6,7 @@ import { cli, fixture, nativeIdentity, testEnv } from "./helpers.ts";
 import { dispatchCodex, paused, resume } from "../src/notify.ts";
 import { registerHook, waitHook } from "../src/hooks.ts";
 import { writeJson } from "../src/files.ts";
-import { receiver, state } from "../src/runtime.ts";
+import { receiver, state, sessionPath } from "../src/runtime.ts";
 import { recordProbeReply, startProbe } from "../src/probe.ts";
 import type { Member } from "../src/types.ts";
 import { inspectCodex } from "../src/notify.ts";
@@ -46,6 +46,36 @@ test("Codex accepted receipt records submission only and never sends body", () =
   store.send({ from: b.id, to: a.id, notify: true, body: "untrusted body" });
   const result = dispatchCodex(store, f.project, a); expect(result.state).toBe("submitted"); expect(result.processed).toBe(false);
   expect(dispatchCodex(store, f.project, a).state).toBe("held");
+});
+test("Codex doctor separates queue capability from a missing reverse nonce proof without sending a notification", () => {
+  fakeCodex("console.log('Queued message accepted123 for thread '+a[a.indexOf('--thread')+1]+'.');");
+  const before = readFileSync(join(f.project.room, "chat.db"));
+  const first = cli(f.root, ["doctor", "--as", a.id]);
+  expect(first.status).toBe(0);
+  expect(first.data.reception).toMatchObject({ state: "unverified", verification: "unverified", reason_code: "no_nonce_proof", transport_alive: null,
+    transport: { state: "available", scope: "command_capability", exact_session_reachable: null }, evidence: null });
+  expect(first.data.reception.reason).toContain("nonce"); expect(first.data.reception.verification_action.hint).toContain("reverse");
+  expect(first.data.reception.verification_action.argv).toEqual([join(f.project.room, "run"), "--project", f.root, "--room", "default", "probe", "--to", a.id]);
+  expect(existsSync(join(f.root, "attempts"))).toBe(false); expect(readFileSync(join(f.project.room, "chat.db"))).toEqual(before);
+  store.send({ from: b.id, to: a.id, id: "queue-receipt-only", body: "fixture", notify: true });
+  expect(dispatchCodex(store, f.project, a).state).toBe("submitted");
+  const after = cli(f.root, ["doctor", "--as", a.id]);
+  expect(after.data.reception.reason_code).toBe("no_nonce_proof"); expect(after.data.reception.evidence).toBeNull();
+  expect(readFileSync(join(f.root, "attempts"), "utf8")).toBe("accepted\n"); expect(store.member(a.id).read_seq).toBe(0);
+});
+test("Codex doctor reports a missing queue separately from missing nonce proof", () => {
+  config({ codexBin: join(f.root, "absent") });
+  const result = cli(f.root, ["doctor", "--as", a.id]);
+  expect(result.data.reception).toMatchObject({ state: "unverified", reason_code: "no_nonce_proof", transport_alive: null,
+    transport: { state: "unavailable", scope: "command_capability", exact_session_reachable: null } });
+  expect(existsSync(join(f.root, "attempts"))).toBe(false);
+});
+test("Codex cannot inherit another adapter or session's stored nonce proof", () => {
+  const proof = { nonce: "fixture", replyId: "fixture", verifiedAt: Date.now(), hostVersion: "fixture", adapter: "codex-queue" };
+  for (const extra of [{ session: b.session_ref! }, { memberId: b.id }, { proof: { ...proof, adapter: "claude-channel" } }, { proof: { ...proof, nonce: "" } }]) {
+    writeJson(sessionPath(f.project, a.session_ref!), { session: a.session_ref!, memberId: a.id, active: true, proof, ...extra });
+    expect(receiver(f.project, a)).toMatchObject({ state: "unverified", reason_code: "no_nonce_proof", evidence: null });
+  }
 });
 test("post-accept CLI error is unknown and pauses future notifications persistently", () => {
   fakeCodex("process.exit(1);"); store.send({ from: b.id, to: a.id, notify: true, body: "first" });
