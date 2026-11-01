@@ -2,7 +2,7 @@
 
 English | [Chinese translation](zh-CN/design.md)
 
-This is the current agent-driven onboarding design, including the Alpha 10 existing-session restoration fix. Historical Channel and timed Stop-hook approaches are recorded at the end; they are not supported setup instructions. Implementation and real-host evidence are distinguished in [verification.md](verification.md).
+This is the current agent-driven onboarding design, including the Alpha 11 minimum-version baseline and existing-session restoration. Historical Channel and timed Stop-hook approaches are recorded at the end; they are not supported setup instructions. Implementation and real-host evidence are distinguished in [verification.md](verification.md).
 
 ## 1. Product scope and reliability
 
@@ -101,6 +101,8 @@ Invoke a compatible `codex queue --thread ... --message ...` for the exact regis
 
 Use only the bound native socket, with current experimental checks described in [experimental-socket.md](experimental-socket.md). Do not create a replacement Claude client, receiver service, reply inbox or synthetic native sender identity. Successful writes remain `submitted`, `processed: false`; native hold/refuse can prevent delivery. This adapter has no native delivery-control receipt listener.
 
+Claude Code 2.1.312 is a minimum baseline, with no upper product-version bound. Compare full semantic versions rather than strings or an exact-version allowlist. Higher patch/minor/major releases remain eligible for automatic reception; diagnose actual wire/client incompatibility separately with E_PEER_PROTOCOL/E_PEER_KIND. Preserve exact-session/process/socket/credential checks and receiver-proof isolation. Newly eligible versions do not inherit historical real-model proof.
+
 Verification requires a fresh correlated nonce returned by the exact native session, adapter, room and receiver instance. Old Hook/Channel proofs, another process and another room are historical evidence only. Notification TTL does not invalidate a late valid reply to an already queued probe. Preserve the first reply timestamp on idempotent repeats rather than refreshing old evidence.
 
 ## 7. Program, workspace and rooms
@@ -125,7 +127,7 @@ SessionStart uses real `cwd`/`session_id`, persists the UUID only in the host-pr
 
 The host may supply a not-yet-created CLAUDE_ENV_FILE on startup, resume or compaction. Require an absolute path, resolve only its existing parent, and open the leaf with O_RDWR/O_APPEND/O_CREAT/O_NOFOLLOW/O_NONBLOCK and mode 0600 for a new file. Validate the opened descriptor as a regular file owned by the current user, preserve content/newline boundaries, append an identical identity at most once on repeated invocations, and always close the descriptor. Reject linked/non-regular leaves and missing parents; do not create parent directories or initialize unrelated projects. This is host-private identity persistence, not model-delivery evidence.
 
-Explicit socket disablement survives joining. A changed instance requires its new native process's own SessionStart or an explicit rebind; it never inherits old nonce proof. Version mismatch preserves manual messaging with a concrete reason and starts no fallback adapter. Owned legacy Channel launchers become retired stubs during migration; user launchers and running clients remain untouched.
+Explicit socket disablement survives joining. A changed instance requires its new native process's own SessionStart or an explicit rebind; it never inherits old nonce proof. Below-baseline versions and actual protocol/client incompatibility preserve manual messaging with a concrete reason and start no fallback adapter. Owned legacy Channel launchers become retired stubs during migration; user launchers and running clients remain untouched.
 
 ## 9. Claude inbound policy and startup (Alpha 8)
 

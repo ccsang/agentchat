@@ -2,17 +2,17 @@
 
 # Claude 原生 socket 实验
 
-此适配最初由用户选择保留网关并开发。Alpha 5 按用户新要求移除 Channel，Claude join 默认尝试绑定准确的原生 socket；协议仍按实验接口锁定版本。Codex 继续使用 queue，没有新增常驻收件进程。
+此适配最初由用户选择保留网关并开发。Alpha 5 按用户新要求移除 Channel，Claude join 默认尝试绑定准确的原生 socket；协议细节仍属于实验接口。Codex 继续使用 queue，没有新增常驻收件进程。
 
 ## 范围
 
-当前锁定 Claude Code 2.1.312、peerProtocol 1、交互 CLI。本机 macOS arm64 已完成原会话 nonce、双向闭环，以及顺序进行的真实 10 分钟和 1 小时空闲验收，详见 verification.md。其他版本、Linux、Windows、Desktop Code tab 等组合未验收。协议并非完整稳定的官方外部客户端 API，升级时需复核并重新验证。
+最低支持 Claude Code 2.1.312，无产品版本上限；更高补丁、次版本和主版本均可使用 peerProtocol 1 交互 CLI 适配器自动接收，不需要逐版本批准。应诊断修复实际兼容问题，不因产品版本更新而拒绝。本机 macOS arm64 已完成原会话 nonce、双向闭环，以及顺序进行的真实 10 分钟和 1 小时空闲验收，详见 verification.md。其他版本、Linux、Windows、Desktop Code tab 等组合未验收。协议并非完整稳定的官方外部客户端 API，升级时需复核并重新验证。
 
 无独立收件服务、HTTP 端口、假原生会话或模型轮询。日常 CLI 和两张业务表保持不变。
 
 ## 使用
 
-join 自动尝试绑定当前准确会话，不支持的版本保留主动读写并报告原因。需要修复时，由 agent 对准确已登记的 Claude 执行 `socket-config --apply`；协作方可用 `--to` 指定确切成员。无 apply 只预览，且不发送通知。目标按已登记原生 UUID 匹配唯一有效 peer，用户无需搬运 UUID 或 socket 路径。
+join 自动尝试绑定当前准确会话；低于基线、格式损坏或实际协议/客户端不兼容时保留主动读写并分别报告原因。需要修复时，由 agent 对准确已登记的 Claude 执行 `socket-config --apply`；协作方可用 `--to` 指定确切成员。无 apply 只预览，且不发送通知。目标按已登记原生 UUID 匹配唯一有效 peer，用户无需搬运 UUID 或 socket 路径。
 
 在用户授权的真实联调范围执行 `probe`，nonce 必须通过该实例自己的工具上下文回传。`doctor` 的 mode 为 claude-socket-experimental，验证为 current_socket 时才证明当前实例通过探针。将来若恢复了原会话而进程已变，需要该新进程自己的 SessionStart 或再次显式绑定，并重新验证；不猜最近会话，也不靠同名接管。
 
@@ -27,7 +27,8 @@ Claude 用户级插件自动加载生命周期 hooks，仅在已初始化且开�
 ## 实际协议与校验
 
 - 仅读取本用户 Claude sessions 目录下的 PID 元数据；按目标 UUID 筛选，不读取其他聊天正文。发现数量有上限。
-- 项目按现有 common-dir 规则检查；PID 起始时间使用 LC_ALL=C、TZ=UTC 查询以匹配 2.1.312 元数据。进程重用、多个同时存活的相同会话、错误项目或协议版本均拒绝。
+- 按完整语义版本比较 2.1.312 最低基线，预发布遵守版本顺序、构建元数据不改变顺序。E_PEER_VERSION 表示低于基线或格式损坏，E_PEER_PROTOCOL 表示协议不兼容，E_PEER_KIND 表示客户端类型不兼容；产品版本较新本身不是错误。
+- 项目按现有 common-dir 规则检查；PID 起始时间使用 LC_ALL=C、TZ=UTC 查询。进程重用、多个同时存活的相同会话及错误项目均拒绝。
 - 元数据可为宿主实际创建的 0644 文件，但必须是本用户所有的常规文件；socket 及其目录分别要求 owner-only，key 必须是本用户 owner-only 常规文件。拒绝最终路径的符号链接。
 - Bun 1.3.14 无法对 socket inode 调用 realpathSync：先 lstat 最终节点，再规范化父目录，兼容 macOS 的 /tmp → /private/tmp 系统别名。实例指纹包含进程身份、版本、规范化 socket 路径、设备及 inode。
 - 此版本的 key 文件名使用已发布 socket 路径的 SHA-256；在本机观测中，该路径与规范化的 /private/tmp 路径不同。读取并核对 peerToken 与 procStart，凭据不落入消息、绑定文件或命令行。
