@@ -9,6 +9,7 @@ import { notice } from "./notify.ts";
 import type { Member, Project } from "./types.ts";
 import type { Store } from "./store.ts";
 import { memberRoomSelected } from "./rooms.ts";
+import { lifecycleStatus, peerFailure, socketRecovery } from "./reception-diagnostics.ts";
 
 export async function dispatchSocket(store: Store, project: Project, member: Member): Promise<Record<string, unknown>> {
   if (state(project, member)?.active === false) return { state: "unavailable", reason: "native_session_ended" };
@@ -24,8 +25,18 @@ export async function dispatchSocket(store: Store, project: Project, member: Mem
     if (stopped) return { state: "paused", reason: stopped.reason };
     const binding = socketBinding(project, member);
     if (!binding?.enabled) return { state: "unavailable", reason: "No supported native socket is bound; run join and doctor" };
-    try { validatePeer(project, member, binding); connection = await connectPeer(binding); validatePeer(project, member, binding); }
-    catch { return { state: "unavailable", reason: "Exact native peer failed validation or connection; no notification reservation was consumed" }; }
+    let stage: "validation" | "connection" = "validation";
+    try {
+      validatePeer(project, member, binding); stage = "connection";
+      connection = await connectPeer(binding); stage = "validation";
+      validatePeer(project, member, binding);
+    } catch (error) {
+      const failure = peerFailure(error, stage);
+      return { state: "unavailable", reason: failure.reason, code: failure.code,
+        diagnostic: { stage: failure.stage, cause: failure.cause }, reservation_consumed: false,
+        ...(failure.rebind ? { recovery: socketRecovery(project, member) } : {}),
+        ...(failure.stale ? { lifecycle: lifecycleStatus(project, state(project, member)?.lifecycle, true) } : {}) };
+    }
     const config = policy(project), claim = store.claim(member.id, config.budget, Date.now(), config.windowSeconds * 1000);
     if (!claim.batch) return { state: "held", reason: claim.reason, used: claim.used, retry_at: claim.retry_at, automatic_retry: false };
     const wireId = `cc-msg-${randomUUID().replaceAll("-", "")}`;

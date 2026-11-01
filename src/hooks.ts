@@ -46,7 +46,8 @@ export function registerHook(project: Project, input: HookInput, env: NodeJS.Pro
   // Globally loaded hooks never enroll an unrelated project or worktree.
   if (uninstalled(project) || (plugin ? !saved?.installed || saved.root !== project.root : saved && !integrationSettings(project).hooks)) return {};
   if (!plugin) persistIdentity(project, session, env);
-  saveState(project, { ...readJson<SessionState>(sessionPath(project, session)), session, active: true });
+  const lifecycle = { source: plugin ? "plugin" as const : "project" as const, pid: process.ppid, at: Date.now(), root: project.root };
+  saveState(project, { ...readJson<SessionState>(sessionPath(project, session)), session, active: true, lifecycle });
   let reception: Record<string, unknown> | undefined;
   const identity = { runtime: "claude" as const, session }, autoJoin = policy(project).autoJoin;
   const selected = resolveRoom(project, undefined, identity);
@@ -62,8 +63,8 @@ export function registerHook(project: Project, input: HookInput, env: NodeJS.Pro
       if (!member && autoJoin) member = store.join(identity);
       if (member) {
         reception = { ...automaticSocket(selected, member, env, true), membership: existing ? "existing" : "created", room: roomName(selected), member_id: member.id };
-        saveState(selected, { ...state(selected, member), session, active: true, memberId: member.id,
-          error: reception.state === "unavailable" ? { reason: String(reception.reason), at: Date.now() } : undefined });
+        saveState(selected, { ...state(selected, member), session, active: true, memberId: member.id, lifecycle,
+          error: reception.state === "unavailable" ? { reason: String(reception.reason), code: reception.code as string | undefined, at: Date.now() } : undefined });
       }
     } finally { store.close(); }
   }

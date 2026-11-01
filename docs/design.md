@@ -2,7 +2,7 @@
 
 English | [Chinese translation](zh-CN/design.md)
 
-This is the current agent-driven onboarding design, including the Alpha 11 minimum-version baseline and existing-session restoration. Historical Channel and timed Stop-hook approaches are recorded at the end; they are not supported setup instructions. Implementation and real-host evidence are distinguished in [verification.md](verification.md).
+This is the current agent-driven onboarding design, including the Alpha 12 reception diagnostics, minimum-version baseline and existing-session restoration. Historical Channel and timed Stop-hook approaches are recorded at the end; they are not supported setup instructions. Implementation and real-host evidence are distinguished in [verification.md](verification.md).
 
 ## 1. Product scope and reliability
 
@@ -87,6 +87,8 @@ An optional stable ID provides message idempotency. The same ID/semantics return
 
 Each attempt is on demand. After exact-receiver checks, use a short transaction to reserve a batch, then call the host outside the transaction. Batch at most 20 eligible unread notifications per recipient. Defaults are 20 batches in a rolling 600 seconds, at least five seconds apart. Only unreserved notification candidates from the last 30 minutes are eligible; stored messages do not expire.
 
+Pre-submit socket diagnostics distinguish validation from connection, expose only fixed sanitized causes and report that no reservation was consumed. Stale saved processes/instances provide exact-project/room/member preview/apply arrays; a diagnostic never discovers or adopts a replacement, replays a notification or clears a pause. Lifecycle observations record only source, parent PID, timestamp and workspace root during a valid SessionStart. They are setup evidence, never proof of plugin installation, current hook activation or model delivery.
+
 Deferred/rate-limited messages remain stored. There is no background sweep or guaranteed delayed redelivery. An eligible later send may create another attempt; resending the same stable ID does not. Unknown submission keeps reservations and pauses future sends. Migration, room changes and `notify resume` never replay uncertain attempts or switch adapters to resend them.
 
 The three-line notification contains peer provenance, message IDs and a `Read argv` JSON array with exact executable/project/room/read arguments. It contains no business body, Base64 routing, duplicate directory/member fields or repeated protocol. Receivers preserve argument boundaries and original routing even after changing cwd/room, and use their own native identity.
@@ -94,6 +96,8 @@ The three-line notification contains peer provenance, message IDs and a `Read ar
 The thin skill discovers this command, also accepting legacy `Tool argv`. Full rules are compiled into the executable's `skills get`. Reuse the same entry/version's rules; reload when missing or changed, never once per message by default.
 
 ### Codex
+
+`unverified` with `no_nonce_proof` means no valid nonce reply from the exact session/member. `doctor` separately inspects compatible queue command capability through help/version only; an available command does not prove target-thread liveness. Both transport_alive and exact_session_reachable remain null. A fresh authorized reverse probe and original-session reply supply proof; reading diagnostics does not send it. Stored proof from another adapter/session/member is never current verification.
 
 Invoke a compatible `codex queue --thread ... --message ...` for the exact registered thread. Require one matching queue receipt to report submission. Busy hosts may consume their queue only after the active turn ends. A queue receipt is not model-processing evidence.
 

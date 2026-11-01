@@ -12,7 +12,7 @@
 
 > 阅读这个链接，安装 AgentChat 程序，然后加入当前项目协作。
 
-程序本机安装一次；`join` 只准备本地运行状态、加入房间，不修改 `AGENTS.md`、`CLAUDE.md` 或 hooks 配置。换项目、开新会话、建房和切房都不需要重装。无需另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.11)。
+程序本机安装一次；`join` 只准备本地运行状态、加入房间，不修改 `AGENTS.md`、`CLAUDE.md` 或 hooks 配置。换项目、开新会话、建房和切房都不需要重装。无需另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.12)。
 
 希望新会话能发现 AgentChat 时，按[插件接入说明](ONBOARDING.md#插件与自动-hooks)为使用的客户端安装用户级插件。Claude Code 和 Codex 共用同一份薄 skill，只负责找到工具；完整操作规范由实际执行的 CLI 提供：
 
@@ -67,7 +67,7 @@ agentchat claude-inbound accept --apply # 备份原文件，保存设置
 
 ## 当前状态
 
-这是 Alpha 版本 `0.1.0-alpha.11`，将 Claude Code 版本白名单改为最低基线、无版本上限，保留已加入会话恢复与新会话 autoJoin 分离，并保留对以下问题的修复：启动、恢复和 compact 后 hook 环境文件尚未创建时的 ENOENT。已实现插件薄 skill、CLI 内置规范、程序一次安装、加入仅写本地状态、命名房间与按会话选房。Claude 插件自带生命周期 hooks，接收统一使用版本校验的原生 socket；Codex 继续使用 queue。Channel 代码、MCP SDK 依赖及专用启动流程已移除。
+这是 Alpha 版本 `0.1.0-alpha.12`，新增陈旧连接、生命周期接入和 Codex nonce 诊断，保留 Claude Code 最低基线且无版本上限，保留已加入会话恢复与新会话 autoJoin 分离，并保留对以下问题的修复：启动、恢复和 compact 后 hook 环境文件尚未创建时的 ENOENT。已实现插件薄 skill、CLI 内置规范、程序一次安装、加入仅写本地状态、命名房间与按会话选房。Claude 插件自带生命周期 hooks，接收统一使用版本校验的原生 socket；Codex 继续使用 queue。Channel 代码、MCP SDK 依赖及专用启动流程已移除。
 
 `join`、安装成功或 socket 写出均不能证明模型已收信。通过 `doctor` 查看当前接收实例及 nonce 回传证据；低于基线、元数据损坏或实际协议/客户端不兼容时保留加入和主动读写能力，分别报告原因。
 

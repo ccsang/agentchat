@@ -136,6 +136,11 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
   assert(notified.notification.state === "submitted", "Fixture queue did not accept compact notice");
   const notice = readFileSync(capture, "utf8"), lines = notice.split("\n");
   assert(lines.length === 3 && lines[0]!.includes("not user approval") && !notice.includes("Standalone notification business body"), "Notice is verbose or carries business text");
+  const receiptTime = statSync(capture).mtimeMs;
+  const queueDoctor = JSON.parse(run(globalCli, ["--project", project, "--room", "review", "doctor", "--as", queueMember.id]));
+  assert(queueDoctor.reception.reason_code === "no_nonce_proof" && queueDoctor.reception.evidence === null && queueDoctor.reception.transport.state === "available"
+    && queueDoctor.reception.transport_alive === null && queueDoctor.reception.transport.exact_session_reachable === null, "Compiled doctor confused queue capability/receipt with native processing proof");
+  assert(statSync(capture).mtimeMs === receiptTime && queueDoctor.reception.verification_action.requires_authorized_probe, "Compiled doctor submitted another notification or omitted probe scope");
   const readArgv = JSON.parse(lines.find(line => line.startsWith("Read argv: "))!.slice("Read argv: ".length)) as string[];
   run(globalCli, ["--project", project, "room", "use", "default"], undefined, queueHost);
   const received = JSON.parse(run(readArgv[0]!, readArgv.slice(1), undefined, queueHost, root));
@@ -164,6 +169,28 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
     const bindingPath = join(room, "socket-sessions", `${restartSession}.json`), previous = JSON.parse(readFileSync(bindingPath, "utf8"));
     nativeMetadata.version = "3.0.0"; writeFileSync(metadataPath, JSON.stringify(nativeMetadata));
     writeFileSync(bindingPath, JSON.stringify({ ...previous, instance: "e".repeat(64) }), { mode: 0o600 });
+    invoke(["uninstall", "--hooks", "--apply"]);
+    const diagnosticArgs = ["--project", project, "--room", "review", "send", "--to", joined.member.id, "--text", "Diagnostic fixture only", "--notify"];
+    const stale = JSON.parse(run(globalCli, [...diagnosticArgs, "--id", "stale-diagnostic"], undefined, host));
+    const unavailable = stale.notification;
+    assert(unavailable.code === "E_PEER_INSTANCE_CHANGED" && unavailable.diagnostic.stage === "validation" && unavailable.reservation_consumed === false,
+      "Compiled send collapsed stale-binding diagnosis or consumed a reservation");
+    assert(!unavailable.lifecycle.project_hooks_configured && !unavailable.lifecycle.session_start_observed && unavailable.lifecycle.warning.includes("SessionStart"), "Compiled stale-binding diagnosis omitted the observed/configured hook distinction");
+    const argv = unavailable.recovery.apply_argv as string[];
+    assert(JSON.stringify(argv) === JSON.stringify([join(room, "run"), "--project", project, "--room", "review", "socket-config", "--to", joined.member.id, "--apply"]), "Compiled repair hint lost its exact routing");
+    const repairedStale = JSON.parse(run(argv[0]!, argv.slice(1)));
+    assert(repairedStale.reception.transport_alive && !repairedStale.reception_verified, "Compiled stale repair failed or claimed model reception");
+    assert(JSON.parse(run(globalCli, ["--project", project, "--room", "review", "read", "--id", "stale-diagnostic"], undefined, host)).message.notify_batch_id === null,
+      "Compiled diagnostic/repair consumed a reservation or sent a notification");
+    const keyPath = join(sessions, `${process.pid}.${createHash("sha256").update(peerPath).digest("hex")}.key`), keyBytes = readFileSync(keyPath);
+    const secret = "NATIVE_CREDENTIAL_MUST_NOT_LEAK";
+    writeFileSync(keyPath, `{"peerToken":"${secret}",invalid`);
+    const credential = JSON.parse(run(globalCli, [...diagnosticArgs, "--id", "credential-diagnostic"], undefined, host));
+    const safeDoctor = run(globalCli, ["--project", project, "--room", "review", "doctor"], undefined, restartHost);
+    assert(credential.notification.code === "E_PEER_CREDENTIAL" && !JSON.stringify(credential).includes(secret) && !safeDoctor.includes(secret), "Compiled native credential exception leaked data or lost its cause");
+    writeFileSync(keyPath, keyBytes);
+    invoke(["install", "--hooks", "--apply"]);
+    writeFileSync(bindingPath, JSON.stringify({ ...previous, instance: "e".repeat(64) }), { mode: 0o600 });
     const end = JSON.stringify({ session_id: restartSession, cwd: project, hook_event_name: "SessionEnd" });
     run("/bin/sh", [pluginWrapper, "session-end"], end);
     const selectedState = join(room, "rooms/review/sessions", `${restartSession}.json`);
@@ -173,6 +200,7 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
     assert(result.hookSpecificOutput.additionalContext.includes('"membership":"existing"'), "Compiled hook did not restore existing membership with auto-join off");
     const after = JSON.parse(run(globalCli, ["--project", project, "doctor"], undefined, restartHost));
     assert(after.member.id === joined.member.id && after.member.read_seq === page.next_cursor && after.room_name === "review", "Compiled resume lost member, cursor or selected room");
+    assert(after.reception.lifecycle.session_start_observed && after.reception.lifecycle.plugin_hook_observed, "Compiled plugin lifecycle observation was not recorded");
     const rebound = JSON.parse(readFileSync(bindingPath, "utf8"));
     assert(after.reception.transport_alive && after.reception.verification === "unverified" && rebound.version === "3.0.0" && rebound.instance !== "e".repeat(64), "Compiled resume did not rebind the newer Claude peer or inherited proof");
     const count = invoke(["--room", "review", "members"]).members.length, defaultCount = invoke(["members"]).members.length;
@@ -219,6 +247,6 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
   const afterUninstall = randomUUID();
   assert(run("/bin/sh", [pluginWrapper, "session-start"], JSON.stringify({ session_id: afterUninstall, cwd: project, hook_event_name: "SessionStart" })) === "{}", "Plugin enrolled an uninstalled workspace");
   console.log(JSON.stringify({ ok: true, version, platform: process.platform, arch: process.arch,
-    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "plugin_compact_missing_env_and_idempotency", "managed_compact_missing_env_and_idempotency", "resume_existing_named_member_auto_join_off", "resume_rebinds_replaced_peer_without_model_proof", "claude_minimum_baseline_no_upper_cap", "specific_peer_compatibility_diagnostics", "resume_preserves_new_session_opt_out_and_disabled_receiver", "inbound_preview_no_writes", "inbound_exact_backup_and_preserved_settings", "inbound_idempotency_and_reversal", "startup_inbound_policy_notice", "generated_english_instructions", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "compact_three_line_notification", "compact_routing_after_room_switch_from_other_cwd", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
+    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "plugin_compact_missing_env_and_idempotency", "managed_compact_missing_env_and_idempotency", "resume_existing_named_member_auto_join_off", "resume_rebinds_replaced_peer_without_model_proof", "claude_minimum_baseline_no_upper_cap", "specific_peer_compatibility_diagnostics", "sanitized_stale_binding_and_exact_repair", "codex_capability_is_not_nonce_proof", "lifecycle_observation_is_not_installation", "resume_preserves_new_session_opt_out_and_disabled_receiver", "inbound_preview_no_writes", "inbound_exact_backup_and_preserved_settings", "inbound_idempotency_and_reversal", "startup_inbound_policy_notice", "generated_english_instructions", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "compact_three_line_notification", "compact_routing_after_room_switch_from_other_cwd", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
     native_reception_verified: false }));
 } finally { rmSync(root, { recursive: true, force: true }); }

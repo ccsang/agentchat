@@ -43,7 +43,7 @@ bun run check
 bun test tests
 bun run build
 bun run build:release
-bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.11-darwin-arm64
+bun run verify:release --binary dist/release/agentchat-v0.1.0-alpha.12-darwin-arm64
 ```
 
 `build:release --target linux-x64` supports cross-compilation. The release workflow uses four native runners for tests, builds and standalone verification. Fresh directories, special-character paths and PATH without developer runtimes cover installation/command protection, runtime-only defaults, explicit integrations, rooms, hooks/startup notices, inbound-policy preview/backup/reversal, SQLite messaging/mark and removal. Fake clients never notify real sessions.
@@ -66,3 +66,5 @@ References: [Bun standalone executables](https://bun.sh/docs/bundler/executables
 Alpha 10 restores an existing exact Claude session in its selected room even when autoJoin is false. New-session enrollment remains opt-in. Upgrade the global CLI and affected project pins/owned hooks; the unchanged Alpha 8 plugin remains compatible. Let the host run a real SessionStart after updating a live session, without fabricating hook context or replaying old notifications.
 
 Alpha 11 changes the exact Claude version allowlist to a 2.1.312 minimum baseline with no upper product-version limit. Upgrade the global CLI and the requested projects' pinned entries/owned hooks so their join, resume and notification validation use the new rule. The thin plugin remains unchanged; wire-protocol/client incompatibilities are reported independently.
+
+Alpha 12 adds sanitized stale-binding/connection diagnostics, exact-member repair hints, passive lifecycle observations and Codex queue-capability versus nonce-proof status. Upgrade the global CLI and requested project pins/owned hooks; diagnostics never install hooks, send probes or replay notifications. The thin plugin remains unchanged.

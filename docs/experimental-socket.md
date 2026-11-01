@@ -16,6 +16,10 @@ There is no separate receiver service, HTTP port, synthetic native session or mo
 
 Only an authorized real `probe` and a nonce reply from that instance's own tool context validate automatic reception. `doctor` reports `claude-socket-experimental`; `current_socket` proof belongs to the recorded instance/room. Restoring a session in a new process requires its own SessionStart or explicit rebind and a fresh probe, never a same-name takeover.
 
+Pre-submit failures expose a sanitized code/cause and validation/connection stage, with reservation_consumed false. An exited saved PID is E_PEER_PROCESS, a changed socket instance is E_PEER_INSTANCE_CHANGED, and a refused/timed-out connection is E_PEER_CONNECT. Recovery preview/apply argv select only the exact registered project/room/member, preserving old reservations and pauses without sending a message. Native parser/OS exception text and credentials are not returned.
+
+Lifecycle diagnostics report configured project hooks separately from observed SessionStart source/PID/time/root. A missing observation does not prove that the plugin is uninstalled; a configured hook does not establish activation. Stale bindings with no observed startup get an install/load hint for the Claude plugin or an explicitly chosen project-hook copy. Never fabricate a startup event or automatically bind another process to make that warning disappear.
+
 Claude plugin lifecycle hooks auto-enroll only already initialized workspaces with autoJoin enabled. Auto-join defaults off. SessionEnd marks the exact session inactive. `socket-config --disable --apply` preserves history and prevents later join from silently re-enabling reception; `install --no-auto-join --apply` prevents future auto-enrollment. Neither starts a fallback client or resets reservations.
 
 ## Inbound approval at startup

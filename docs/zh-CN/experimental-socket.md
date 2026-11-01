@@ -26,6 +26,10 @@ Claude 用户级插件自动加载生命周期 hooks，仅在已初始化且开�
 
 ## 实际协议与校验
 
+提交前失败返回脱敏 code/cause、validation/connection 阶段和 reservation_consumed=false；旧 PID 退出为 E_PEER_PROCESS，实例变化为 E_PEER_INSTANCE_CHANGED，连接失败为 E_PEER_CONNECT。修复预览和应用数组只指向准确项目/房间/成员，不重放、不清预留或暂停、不发通知；不返回原始 JSON/系统异常和凭据。
+
+生命周期诊断区分项目 hooks 配置和观察到的 SessionStart 来源/PID/时间/工作区。没有观察不证明插件未安装，配置存在也不证明已加载。陈旧绑定缺少观察时提示安装/加载 Claude 插件或明确选择项目 hooks，不伪造宿主事件、不自动接管新进程。
+
 - 仅读取本用户 Claude sessions 目录下的 PID 元数据；按目标 UUID 筛选，不读取其他聊天正文。发现数量有上限。
 - 按完整语义版本比较 2.1.312 最低基线，预发布遵守版本顺序、构建元数据不改变顺序。E_PEER_VERSION 表示低于基线或格式损坏，E_PEER_PROTOCOL 表示协议不兼容，E_PEER_KIND 表示客户端类型不兼容；产品版本较新本身不是错误。
 - 项目按现有 common-dir 规则检查；PID 起始时间使用 LC_ALL=C、TZ=UTC 查询。进程重用、多个同时存活的相同会话及错误项目均拒绝。
