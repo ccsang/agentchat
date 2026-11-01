@@ -4,6 +4,10 @@ English | [Chinese translation](zh-CN/verification.md)
 
 Development environment: macOS arm64, Bun 1.3.14. Dates and results below belong to their recorded revision. Synthetic/unit/package checks do not verify delivery to a real model, and a later release never inherits native proof for another session or instance.
 
+## Alpha 11: minimum Claude version, no upper bound (2026-11-01)
+
+A regression first reproduced the old refusal of a synthetic 2.1.313 peer. Replaced the 2.1.312 allowlist with a semantic minimum baseline, independently diagnosing incompatible wire protocols and client kinds. Isolated peer coverage includes higher patch/minor/major releases, numeric ordering, prereleases/build metadata, older/malformed versions, newer-version join and notification submission, upgrade/resume, explicit repair, unchanged reservations and proof isolation. Compiled checks exercise the baseline and a simulated higher major version without external Bun/Node or real-model notifications. 166 tests, type checking, source build, macOS arm64 standalone verification and navigation/anchor/language checks for all 40 English/Chinese documents passed. Four-platform and public-upgrade validation gate and follow publication. Historical real native-model proof remains scoped to its original session.
+
 ## Alpha 10: restore existing Claude sessions (2026-10-31)
 
 The reported configuration retained its named-room member and cursor but SessionEnd had marked that room inactive. SessionStart reactivated only the base session file while autoJoin false skipped the named room and stale socket. An isolated fixture reproduced the same state; no actual user state was changed for that diagnosis.

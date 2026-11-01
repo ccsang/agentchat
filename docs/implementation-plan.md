@@ -4,6 +4,13 @@ English | [Chinese translation](zh-CN/implementation-plan.md)
 
 Use the current self-onboarding design. Historical milestones below record completed work; Channel and timed hooks are retired and must not be restored as setup instructions. Native model tests remain separate from synthetic/unit/package checks.
 
+## Alpha 11: minimum Claude version with no upper bound
+
+- [x] Treat Claude Code 2.1.312 as the minimum baseline; admit higher patch/minor/major versions using semantic ordering.
+- [x] Separate product-version, wire-protocol and client-kind diagnoses; retain exact native identity, permissions and instance checks.
+- [x] Exercise automatic join/dispatch, upgrade/resume and explicit repair for higher versions without inheriting old proof or changing reservations/opt-outs.
+- [x] Validate baseline and newer versions plus specific incompatibility errors through the compiled standalone executable and synchronize English/Chinese instructions.
+
 ## Alpha 10: restore joined sessions independently of auto-join
 
 - [x] Restore the selected room's existing exact runtime/UUID membership with autoJoin off; create no room or member in that mode.

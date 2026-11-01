@@ -6,7 +6,7 @@ The user selected this experiment after Channel was unavailable, retaining the e
 
 ## Scope
 
-The adapter accepts only Claude Code **2.1.312 / peerProtocol 1**, interactive CLI. The original macOS arm64 session passed fresh nonce, bidirectional and sequential real 10-minute/one-hour idle tests; see [verification.md](verification.md). Other versions, Linux/Windows native hosts and Desktop Code tabs have not passed real-model acceptance. External frame/key details are experimental, not a stable official client API; recheck them after host upgrades.
+The adapter supports **Claude Code 2.1.312 and newer**, with no upper product-version bound, through peerProtocol 1 interactive CLI. Higher patch, minor and major releases are eligible for automatic reception without an individual version approval. Actual compatibility failures must be diagnosed and fixed rather than refused solely because the product is newer. The original macOS arm64 session passed fresh nonce, bidirectional and sequential real 10-minute/one-hour idle tests; see [verification.md](verification.md). That historical evidence does not prove another version/instance's model reception. External frame/key details remain experimental.
 
 There is no separate receiver service, HTTP port, synthetic native session or model polling. The core remains one CLI and two business tables per room.
 
@@ -29,7 +29,8 @@ Managed/launch settings and stricter project rules may override that user value.
 ## Wire protocol and validation
 
 - Inspect bounded PID metadata under this user's Claude sessions directory, filtering the exact registered UUID without reading unrelated conversation bodies.
-- Validate the project's common-directory boundary and process start time with LC_ALL=C/TZ=UTC to match 2.1.312 metadata. Reject PID reuse, duplicate live claims for the same session, wrong project or unsupported protocol/version/client kind.
+- Require a complete semantic version at or above 2.1.312; prereleases follow semantic precedence and build metadata does not change it. Below-baseline or malformed versions report E_PEER_VERSION, incompatible peerProtocol reports E_PEER_PROTOCOL, and incompatible client kind reports E_PEER_KIND. A newer product version alone is never an error.
+- Validate the project's common-directory boundary and process start time with LC_ALL=C/TZ=UTC to match native metadata. Reject PID reuse, duplicate live claims for the same session and wrong projects.
 - Native metadata may be 0644 but must be an owned regular file. Socket/directory and key require owner-only permissions; reject final-path symlinks.
 - Bun 1.3.14 cannot realpath a socket inode: lstat the final node, canonicalize its parent and retain device/inode checks, including macOS /tmp → /private/tmp aliases. Instance identity includes process, version, canonical socket path, device and inode.
 - In this host version, key filenames hash the published socket path, which can differ from the canonical alias. Validate peerToken/procStart and never put credentials in bindings, messages or command arguments.

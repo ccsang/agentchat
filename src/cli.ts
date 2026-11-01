@@ -44,7 +44,7 @@ Setup / diagnostics:
   doctor                             Report current identity and receiver evidence.
   probe [--to NAME|ID]                Native nonce probe; may use model quota.
   notify resume [--to NAME|ID]        Resume future notifications, never reset old attempts.
-  socket-config [--to NAME|ID] [--apply] [--disable]  Rebind/disable the version-checked native Claude socket.
+  socket-config [--to NAME|ID] [--apply] [--disable]  Rebind/disable the native Claude socket (Claude Code 2.1.312+).
 
 Advanced / testing: --project DIR, --room NAME, --as MEMBER; join --generic --name NAME.
 Explicit --room on read/send/mark routes that command only, without changing session selection.

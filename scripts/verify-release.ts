@@ -150,8 +150,10 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
   try {
     const sessions = join(env.CLAUDE_CONFIG_DIR!, "sessions"); mkdirSync(sessions, { recursive: true, mode: 0o700 });
     const procStart = processStart(process.pid);
-    writeFileSync(join(sessions, `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: restartSession, cwd: project,
-      procStart, version: "2.1.312", peerProtocol: 1, kind: "interactive", entrypoint: "cli", messagingSocketPath: peerPath }), { mode: 0o644 });
+    const metadataPath = join(sessions, `${process.pid}.json`);
+    const nativeMetadata = { pid: process.pid, sessionId: restartSession, cwd: project,
+      procStart, version: "2.1.312", peerProtocol: 1, kind: "interactive", entrypoint: "cli", messagingSocketPath: peerPath };
+    writeFileSync(metadataPath, JSON.stringify(nativeMetadata), { mode: 0o644 });
     writeFileSync(join(sessions, `${process.pid}.${createHash("sha256").update(peerPath).digest("hex")}.key`),
       JSON.stringify({ peerToken: randomUUID().replaceAll("-", ""), procStart }), { mode: 0o600 });
     const restartHost = { AGENTCHAT_CLAUDE_SESSION_ID: restartSession };
@@ -160,6 +162,7 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
     run(globalCli, ["--project", project, "read", "--mark", String(page.next_cursor)], undefined, restartHost);
     invoke(["install", "--no-auto-join", "--apply"]);
     const bindingPath = join(room, "socket-sessions", `${restartSession}.json`), previous = JSON.parse(readFileSync(bindingPath, "utf8"));
+    nativeMetadata.version = "3.0.0"; writeFileSync(metadataPath, JSON.stringify(nativeMetadata));
     writeFileSync(bindingPath, JSON.stringify({ ...previous, instance: "e".repeat(64) }), { mode: 0o600 });
     const end = JSON.stringify({ session_id: restartSession, cwd: project, hook_event_name: "SessionEnd" });
     run("/bin/sh", [pluginWrapper, "session-end"], end);
@@ -170,13 +173,25 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
     assert(result.hookSpecificOutput.additionalContext.includes('"membership":"existing"'), "Compiled hook did not restore existing membership with auto-join off");
     const after = JSON.parse(run(globalCli, ["--project", project, "doctor"], undefined, restartHost));
     assert(after.member.id === joined.member.id && after.member.read_seq === page.next_cursor && after.room_name === "review", "Compiled resume lost member, cursor or selected room");
-    assert(after.reception.transport_alive && after.reception.verification === "unverified" && JSON.parse(readFileSync(bindingPath, "utf8")).instance !== "e".repeat(64), "Compiled resume did not rebind the replacement peer or inherited proof");
+    const rebound = JSON.parse(readFileSync(bindingPath, "utf8"));
+    assert(after.reception.transport_alive && after.reception.verification === "unverified" && rebound.version === "3.0.0" && rebound.instance !== "e".repeat(64), "Compiled resume did not rebind the newer Claude peer or inherited proof");
     const count = invoke(["--room", "review", "members"]).members.length, defaultCount = invoke(["members"]).members.length;
     run("/bin/sh", [pluginWrapper, "session-start"], JSON.stringify({ session_id: randomUUID(), cwd: project, hook_event_name: "SessionStart" }));
     assert(invoke(["--room", "review", "members"]).members.length === count && invoke(["members"]).members.length === defaultCount && JSON.parse(readFileSync(join(room, "config.json"), "utf8")).autoJoin === false, "Compiled hook enrolled a new session or changed auto-join policy");
     run("/bin/sh", [pluginWrapper, "session-end"], end);
     const repaired = JSON.parse(run(program, ["--project", project, "--room", "review", "socket-config", "--to", joined.member.id, "--apply"]));
     assert(repaired.reception.transport_alive && !repaired.reception_verified, "Compiled explicit repair did not reactivate the existing room or claimed model delivery");
+    for (const [changes, code] of [
+      [{ version: "2.1.311" }, "E_PEER_VERSION"],
+      [{ peerProtocol: 2 }, "E_PEER_PROTOCOL"],
+      [{ kind: "noninteractive" }, "E_PEER_KIND"],
+    ] as const) {
+      writeFileSync(metadataPath, JSON.stringify({ ...nativeMetadata, ...changes }));
+      const rejected = spawnSync(program, ["--project", project, "--room", "review", "socket-config", "--to", joined.member.id],
+        { cwd: project, env, encoding: "utf8", timeout: 15000 });
+      assert(rejected.status !== 0 && JSON.parse(rejected.stderr.trim()).error.code === code, "Compiled peer validation lost the specific compatibility diagnosis");
+    }
+    writeFileSync(metadataPath, JSON.stringify(nativeMetadata));
     run(globalCli, ["--project", project, "socket-config", "--disable", "--apply"], undefined, restartHost);
     run("/bin/sh", [pluginWrapper, "session-end"], end); run("/bin/sh", [pluginWrapper, "session-start"], resume);
     assert(JSON.parse(run(globalCli, ["--project", project, "doctor"], undefined, restartHost)).reception.state === "disabled", "Compiled resume re-enabled an explicitly disabled receiver");
@@ -204,6 +219,6 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
   const afterUninstall = randomUUID();
   assert(run("/bin/sh", [pluginWrapper, "session-start"], JSON.stringify({ session_id: afterUninstall, cwd: project, hook_event_name: "SessionStart" })) === "{}", "Plugin enrolled an uninstalled workspace");
   console.log(JSON.stringify({ ok: true, version, platform: process.platform, arch: process.arch,
-    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "plugin_compact_missing_env_and_idempotency", "managed_compact_missing_env_and_idempotency", "resume_existing_named_member_auto_join_off", "resume_rebinds_replaced_peer_without_model_proof", "resume_preserves_new_session_opt_out_and_disabled_receiver", "inbound_preview_no_writes", "inbound_exact_backup_and_preserved_settings", "inbound_idempotency_and_reversal", "startup_inbound_policy_notice", "generated_english_instructions", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "compact_three_line_notification", "compact_routing_after_room_switch_from_other_cwd", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
+    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "plugin_compact_missing_env_and_idempotency", "managed_compact_missing_env_and_idempotency", "resume_existing_named_member_auto_join_off", "resume_rebinds_replaced_peer_without_model_proof", "claude_minimum_baseline_no_upper_cap", "specific_peer_compatibility_diagnostics", "resume_preserves_new_session_opt_out_and_disabled_receiver", "inbound_preview_no_writes", "inbound_exact_backup_and_preserved_settings", "inbound_idempotency_and_reversal", "startup_inbound_policy_notice", "generated_english_instructions", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "compact_three_line_notification", "compact_routing_after_room_switch_from_other_cwd", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
     native_reception_verified: false }));
 } finally { rmSync(root, { recursive: true, force: true }); }

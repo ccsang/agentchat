@@ -187,15 +187,15 @@ ONBOARDING.md 面向 agent。安装程序只准备本机可复用的工具；默
 
 显式的本地测试发布器只计时、检查接收实例未变且期间无 Claude 项目发言，到期发一次请求后退出。它不等待回复；Claude 的结果通知唤醒原 Codex 做被动核对，最终不再相互确认。数据相关性仍需与原生通知和无用户输入的会话证据一起阅读。
 
-加速时钟覆盖 10 分钟/1 小时逻辑、限流及恢复，仅算自动化覆盖，不计作真实持续验收。原生 socket 的外部客户端适配由用户明确选择后作为实验提供，保持单独绑定、验证证据和版本锁定，不自动替代 Channel；详见 experimental-socket.md。
+加速时钟覆盖 10 分钟/1 小时逻辑、限流及恢复，仅算自动化覆盖，不计作真实持续验收。原生 socket 的外部客户端适配由用户明确选择后作为实验提供，保持单独绑定、验证证据和最低版本基线，不自动替代 Channel；详见 experimental-socket.md。
 
 ## 11. 已授权的原生 socket 实验
 
 当前网关组合的 Channel 不可用，用户明确选择保留网关并开发原生 socket 适配。此选择不改变入站策略、模型认证或工具审批，也不授权重发已预留通知。
 
-发送方根据已登记 Claude 成员的准确 UUID，在本机原生 peer 元数据中寻找唯一有效实例。校验所属项目 common-dir、PID 的 UTC 起始时间、已核对版本与协议、CLI 会话类型、socket inode 与权限。两个有效进程同时声明同一个 UUID 时拒绝歧义；不同项目、已结束进程、新版本或替换 socket 不接管旧绑定。
+发送方根据已登记 Claude 成员的准确 UUID，在本机原生 peer 元数据中寻找唯一有效实例。校验所属项目 common-dir、PID 的 UTC 起始时间、已核对版本与协议、CLI 会话类型、socket inode 与权限。两个有效进程同时声明同一个 UUID 时拒绝歧义；不同项目、已结束进程、新进程或替换 socket 不静默接管旧绑定。
 
-绑定存于独立的项目私有文件，避免与旧 Channel 的存活信息互相覆盖。当前实验仅允许 2.1.312 / peerProtocol 1；凭据每次从确切 peer 的 owner-only 文件读取，不进入绑定、日志或数据库。它使用 peerToken，不使用 native childToken，不提供虚构的回复 socket 或发送方权限等级。
+绑定存于独立的项目私有文件，避免与旧 Channel 的存活信息互相覆盖。Claude Code 2.1.312 是最低基线，无产品版本上限；更高补丁、次版本和主版本仍可通过 peerProtocol 1 自动接收。按语义版本比较，协议和客户端类型分别诊断为 E_PEER_PROTOCOL / E_PEER_KIND，不因产品版本较新而拒绝；凭据每次从确切 peer 的 owner-only 文件读取，不进入绑定、日志或数据库。它使用 peerToken，不使用 native childToken，不提供虚构的回复 socket 或发送方权限等级。
 
 在独占通知锁内验证并连接目标后，短事务预留通知；事务外发送 NDJSON auth 和 next-priority user 通知，写出后再次核对实例。连接前的确定失败不消耗预留；开始提交后的错误、超时或实例变化均保守记为 unknown 并暂停，不重试、不切通道。Native hold/refuse 可能使已写出帧没有模型响应，必须以准确实例下的 nonce 回复验证。
 
@@ -203,7 +203,7 @@ ONBOARDING.md 面向 agent。安装程序只准备本机可复用的工具；默
 
 socket 的验证证据按具体进程/socket 实例存放。CLI 回传同时要求真实宿主身份与 CLAUDE_CODE_MESSAGING_SOCKET 匹配，旧 Channel nonce 或另一接收实例的回信不能验证当前适配。实验停用或项目卸载后不再通知，历史仍保留。
 
-长期验收除核对项目消息外，还比较锁定版本 peer 元数据的 idle 状态及更新时间。中途出现原生活动、进程变化或接收故障就停止并通知原 Codex，不能报告通过。计时器只在到期时发送一次真实请求，收到结果后由原 Codex 主动继续核对。
+长期验收除核对项目消息外，还比较原会话 peer 元数据的 idle 状态及更新时间。中途出现原生活动、进程变化或接收故障就停止并通知原 Codex，不能报告通过。计时器只在到期时发送一次真实请求，收到结果后由原 Codex 主动继续核对。
 
 ## 12. 程序、项目和聊天室分离（Alpha 2）
 
@@ -249,7 +249,7 @@ Claude manifest 引用插件内的 hooks/claude-hooks.json，仅包含 SessionSt
 
 SessionStart 采用真实 hook cwd/session_id，向宿主私有 CLAUDE_ENV_FILE 写入准确身份；不在业务目录落身份文件。插件不初始化无关项目或未初始化 worktree，只有本工作区安装元数据有效且 autoJoin 开启时才登记成员并尝试绑定。autoJoin 默认关闭，保留显式停用。SessionEnd 清理准确主会话在各房间的 active 状态，阻止进程退出前继续投递；子 agent 不登记主身份。
 
-join 自动尝试准确原生 socket 绑定，不要求项目 hooks 或指令文件。保留 2.1.312 / peerProtocol 1、进程起始时间、唯一 UUID、项目、socket/key 权限、实例校验及原生入站/审批边界；版本不匹配仍可加入和主动读写，返回具体原因，无 Channel 降级。显式 socket disable 不被自动 join 覆盖。已有绑定变化时，只有新原生进程自己的 SessionStart 或明确 socket-config 才能重绑；新实例不继承旧 nonce 证明。
+join 自动尝试准确原生 socket 绑定，不要求项目 hooks 或指令文件。采用 2.1.312 最低基线且无产品版本上限，保留 peerProtocol 1、进程起始时间、唯一 UUID、项目、socket/key 权限、实例校验及原生入站/审批边界；低于基线或实际协议/客户端不兼容仍可加入和主动读写，返回具体原因，无 Channel 降级。显式 socket disable 不被自动 join 覆盖。已有绑定变化时，只有新原生进程自己的 SessionStart 或明确 socket-config 才能重绑；新实例不继承旧 nonce 证明。
 
 移除 Channel 运行器、MCP SDK 依赖、启动标识/握手和专用恢复流程。旧 channel-config、launch、notify claude-channel/unavailable 统一返回 E_RETIRED，不创建项目状态。旧私有自有启动器通过安装迁移变成明确报废的入口，不执行 Claude；用户自有启动器保持原样。已加载的旧业务客户端不被关闭，旧项目配置需要时由用户在宿主重载或显式清理。
 

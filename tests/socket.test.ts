@@ -48,14 +48,36 @@ test("join automatically binds its exact native socket without consuming or subm
   expect(store.message("pending-auto").notify_batch_id).toBeNull(); expect(frames).toEqual([]);
   expect(cli(f.root, ["join"], env).data.automatic_reception.configured).toBe(false);
 });
-test("unsupported Claude versions remain joined with a concrete error and no Channel fallback", () => {
-  metadata.version = "2.1.313"; writeFileSync(metaPath, JSON.stringify(metadata));
+test.each(["2.1.313", "2.1.1000", "2.10.0", "3.0.0", "2.1.313-beta.1", "2.1.312+build.1"])("Claude %s joins and submits through the native adapter without an upper version limit", async version => {
+  metadata.version = version; writeFileSync(metaPath, JSON.stringify(metadata));
+  const joined = cli(f.root, ["join"], testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! }));
+  expect(joined.status).toBe(0); expect(joined.data.automatic_reception.enabled).toBe(true);
+  expect(joined.data.reception.transport_alive).toBe(true); expect(joined.data.reception.verification).toBe("unverified");
+  expect(socketBinding(f.project, b)?.version).toBe(version); expect(frames).toEqual([]);
+  store.send({ from: a.id, to: b.id, notify: true, id: "future-version", body: "fixture" });
+  const result = await dispatchSocket(store, f.project, b); await until(() => frames.length === 2);
+  expect(result.state).toBe("submitted"); expect(result.host_version).toBe(version); expect(result.processed).toBe(false);
+  expect(frames[0]).toEqual({ type: "auth", token }); expect(frames[1]!.msgV).toBe(1);
+});
+test.each(["2.1.311", "2.0.999", "1.99.999", "2.1.312-beta.1", "invalid", "2.1", "2.1.313garbage", "2.1.313 || *", "2.1.313-beta..1", null, 313])("older or malformed Claude versions stay joined with the baseline diagnosis (%p)", version => {
+  metadata.version = version; writeFileSync(metaPath, JSON.stringify(metadata));
   const result = cli(f.root, ["join"], testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! }));
-  expect(result.status).toBe(0); expect(result.data.automatic_reception.reason).toContain("Unverified Claude socket");
+  expect(result.status).toBe(0); expect(result.data.automatic_reception.code).toBe("E_PEER_VERSION"); expect(result.data.automatic_reception.reason).toContain("2.1.312");
   expect(result.data.reception.mode).toBe(peer.SOCKET_ADAPTER); expect(result.data.reception.transport_alive).toBe(false);
   expect(socketBinding(f.project, b)).toBeNull(); expect(frames).toEqual([]);
 });
-test("an existing default-room session resumes with auto-join off and rebinds only from its native SessionStart", () => {
+test.each([
+  { field: "peerProtocol", value: 2, code: "E_PEER_PROTOCOL" },
+  { field: "kind", value: "noninteractive", code: "E_PEER_KIND" },
+  { field: "entrypoint", value: "desktop", code: "E_PEER_KIND" },
+])("newer Claude reports the actual incompatible $field instead of a product-version refusal", ({ field, value, code }) => {
+  metadata.version = "3.0.0"; metadata[field] = value; writeFileSync(metaPath, JSON.stringify(metadata));
+  store.send({ from: a.id, to: b.id, id: "incompatible", body: "pending", notify: true });
+  const result = cli(f.root, ["join"], testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! }));
+  expect(result.status).toBe(0); expect(result.data.automatic_reception.code).toBe(code);
+  expect(socketBinding(f.project, b)).toBeNull(); expect(store.message("incompatible").notify_batch_id).toBeNull(); expect(frames).toEqual([]);
+});
+test("an existing default-room session resumes after a Claude upgrade with auto-join off only from its native SessionStart", () => {
   const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: b.session_ref! });
   expect(cli(f.root, ["join"], env).status).toBe(0);
   expect(policy(f.project).autoJoin).toBe(false);
@@ -68,10 +90,12 @@ test("an existing default-room session resumes with auto-join off and rebinds on
   store.mark(b.id, store.message("old-reservation").seq);
   endHook(f.project, { session_id: b.session_ref!, cwd: f.root, hook_event_name: "SessionEnd" });
   expect(state(f.project, b)?.active).toBe(false);
+  metadata.version = "3.0.0"; writeFileSync(metaPath, JSON.stringify(metadata));
   expect(automaticSocket(f.project, b).state).toBe("unavailable");
   const result = spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), "hook", "plugin-session-start"],
     { cwd: f.root, env, input: JSON.stringify({ session_id: b.session_ref, cwd: f.root, hook_event_name: "SessionStart", source: "resume" }), encoding: "utf8" });
   expect(result.status).toBe(0); expect(socketBinding(f.project, b)?.instance).not.toBe(stale.instance);
+  expect(socketBinding(f.project, b)?.version).toBe("3.0.0");
   expect(state(f.project, b)?.active).toBe(true); expect(store.member(b.id).read_seq).toBe(1);
   expect(JSON.parse(result.stdout).hookSpecificOutput.additionalContext).toContain('"membership":"existing"');
   expect(receiver(f.project, b).verification).toBe("unverified"); expect(socketProof(f.project, b, stale.instance)?.nonce).toBe("old");
@@ -139,7 +163,7 @@ test("restore cannot rebind a replaced peer from another process or accept an un
   writeJson(join(f.project.room, "socket-sessions", `${b.session_ref}.json`), stale);
   const result = pluginHook({ session_id: b.session_ref!, cwd: f.root, hook_event_name: "SessionStart" }, "SessionStart", env);
   expect(JSON.stringify(result)).toContain("own SessionStart"); expect(socketBinding(f.project, b)?.instance).toBe(stale.instance);
-  metadata.version = "2.1.313"; writeFileSync(metaPath, JSON.stringify(metadata));
+  metadata.version = "2.1.311"; writeFileSync(metaPath, JSON.stringify(metadata));
   const child = spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), "hook", "plugin-session-start"],
     { cwd: f.root, env, input: JSON.stringify({ session_id: b.session_ref, cwd: f.root, hook_event_name: "SessionStart" }), encoding: "utf8" });
   expect(child.status).toBe(0); expect(child.stdout).toContain("E_PEER_VERSION"); expect(socketBinding(f.project, b)?.instance).toBe(stale.instance); expect(frames).toEqual([]);
@@ -154,10 +178,10 @@ test("explicit live-peer repair reactivates an ended named-room membership witho
     writeJson(join(f.project.room, "socket-sessions", `${b.session_ref}.json`), stale);
     endHook(f.project, { session_id: b.session_ref!, cwd: f.root, hook_event_name: "SessionEnd" });
     expect(state(selected, member)?.active).toBe(false);
-    metadata.version = "2.1.313"; writeFileSync(metaPath, JSON.stringify(metadata));
+    metadata.version = "2.1.311"; writeFileSync(metaPath, JSON.stringify(metadata));
     expect(cli(f.root, ["--room", "review", "socket-config", "--to", member.id, "--apply"], testEnv()).data.error.code).toBe("E_PEER_VERSION");
     expect(state(selected, member)?.active).toBe(false);
-    metadata.version = "2.1.312"; writeFileSync(metaPath, JSON.stringify(metadata));
+    metadata.version = "2.1.313"; writeFileSync(metaPath, JSON.stringify(metadata));
     const result = cli(f.root, ["--room", "review", "socket-config", "--to", member.id, "--apply"], testEnv());
     expect(result.status).toBe(0); expect(result.data.reception_verified).toBe(false); expect(result.data.reception.transport_alive).toBe(true);
     expect(state(selected, member)?.active).toBe(true); expect(target.actor({ runtime: b.runtime, session: b.session_ref })).toEqual(member);
@@ -244,8 +268,8 @@ test("native notification uses peer authentication and a one-way next-priority f
   expect(store.member(b.id).read_seq).toBe(0);
 });
 test("unsupported native versions fail before opt-in or notification reservation", async () => {
-  metadata.version = "2.1.313"; writeFileSync(metaPath, JSON.stringify(metadata));
-  expect(() => configureSocket(f.project, b, true)).toThrow("Unverified Claude socket"); expect(socketBinding(f.project, b)).toBeNull();
+  metadata.version = "2.1.311"; writeFileSync(metaPath, JSON.stringify(metadata));
+  expect(() => configureSocket(f.project, b, true)).toThrow("2.1.312"); expect(socketBinding(f.project, b)).toBeNull();
 });
 test("stale process identity is rejected without guessing a replacement or consuming a notification", async () => {
   configureSocket(f.project, b, true); store.send({ from: a.id, to: b.id, id: "stale", notify: true, body: "do not route elsewhere" });

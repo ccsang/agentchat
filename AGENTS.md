@@ -13,6 +13,7 @@ Read README.md, ONBOARDING.md, docs/design.md and docs/implementation-plan.md fi
 - Rejoining the same session is idempotent. A new session with the same name never silently takes over an old identity. Do not guess missing identities.
 - Preview, back up and idempotently update owned configuration while preserving user content. Default install/join never changes Claude inbound policy. An explicitly requested user-level policy change is separate; preserve later hold/refuse choices.
 - Never retry an uncertain notification through another adapter.
+- Claude Code 2.1.312 is the minimum baseline, with no upper product-version limit. Diagnose actual protocol/client incompatibilities separately; never restore an exact-version allowlist for newer Claude releases.
 - Keep real native notifications out of unit tests. Record real integration versions, fresh nonces and processing evidence separately.
 - Run appropriate checks for code changes, including bun run check and bun run build.
 <!-- agentchat:begin -->

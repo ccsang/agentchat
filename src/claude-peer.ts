@@ -10,7 +10,13 @@ import { discoverProject, integrationDir } from "./project.ts";
 import type { Member, Project } from "./types.ts";
 
 export const SOCKET_ADAPTER = "claude-socket-experimental";
-export const SOCKET_VERSIONS = ["2.1.312"];
+export const SOCKET_MIN_VERSION = "2.1.312";
+function meetsVersionBaseline(version: unknown): boolean {
+  // Require a complete version, rather than Bun's permissive partial/range parsing.
+  if (typeof version !== "string" || !/^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[\dA-Za-z-]+(?:\.[\dA-Za-z-]+)*)?(?:\+[\dA-Za-z-]+(?:\.[\dA-Za-z-]+)*)?$/.test(version)) return false;
+  try { return Bun.semver.order(version, SOCKET_MIN_VERSION) >= 0; }
+  catch { return false; }
+}
 interface PeerRecord {
   pid: number; sessionId: string; cwd: string; procStart: string; version: string;
   peerProtocol: number; kind: string; entrypoint: string; messagingSocketPath: string;
@@ -54,7 +60,9 @@ function inspect(project: Project, member: Member, path: string, expected?: Peer
   requireThat(process.platform === "darwin" || process.platform === "linux", "E_PLATFORM", "Experimental native sockets support macOS/Linux only");
   const value = record(path);
   requireThat(member.runtime === "claude" && value.sessionId === member.session_ref, "E_IDENTITY", "Peer metadata belongs to a different native Claude session");
-  requireThat(value.peerProtocol === 1 && SOCKET_VERSIONS.includes(value.version) && value.kind === "interactive" && value.entrypoint === "cli", "E_PEER_VERSION", "Unverified Claude socket protocol/version or client kind; experimental adapter refuses this combination");
+  requireThat(meetsVersionBaseline(value.version), "E_PEER_VERSION", `Claude Code ${SOCKET_MIN_VERSION} or newer is required; native version is missing, malformed or below the baseline`);
+  requireThat(value.peerProtocol === 1, "E_PEER_PROTOCOL", "Incompatible native peerProtocol; this adapter implements peerProtocol 1");
+  requireThat(value.kind === "interactive" && value.entrypoint === "cli", "E_PEER_KIND", "Native socket reception requires an interactive Claude CLI session");
   requireThat(typeof value.cwd === "string" && (expected?.projectDir === integrationDir(project) && expected.cwd === value.cwd || integrationDir(discoverProject(value.cwd)) === integrationDir(project)), "E_PROJECT", "Native Claude peer belongs to another project");
   requireThat(typeof value.procStart === "string" && value.procStart.trim().replace(/\s+/g, " ") === processStart(value.pid), "E_PEER", "Native PID was reused or its process-start evidence changed");
   const socketPath = value.messagingSocketPath;
