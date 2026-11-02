@@ -39,9 +39,10 @@ export function dispatchCodex(store: Store, project: Project, member: Member): R
   try {
   const stopped = paused(project, member);
   if (stopped) return { state: "paused", reason: stopped.reason };
-  const adapter = inspectCodex(policy(project).codexBin);
+  const config = policy(project);
+  const adapter = inspectCodex(config.codexBin);
   if (!adapter) return { state: "unavailable", reason: "No compatible Codex queue executable; delivery not attempted" };
-  const config = policy(project), claim = store.claim(member.id, config.budget, Date.now(), config.windowSeconds * 1000);
+  const claim = store.claim(member.id, config.budget, Date.now(), config.windowSeconds * 1000);
   if (!claim.batch) return { state: "held", reason: claim.reason, used: claim.used, retry_at: claim.retry_at };
   const result = spawnSync(adapter.bin, ["queue", "--thread", member.session_ref!, "--message", notice(claim.batch, project)], {
     encoding: "utf8", timeout: 5000, killSignal: "SIGKILL", maxBuffer: 128 * 1024,

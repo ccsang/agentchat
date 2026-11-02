@@ -39,6 +39,7 @@ export function discoverProject(cwd = process.cwd(), roomOverride?: string): Pro
     if (existsSync(join(at, ".agentchat"))) { root = at; break; }
     if (at === dirname(at) || at === homedir()) break;
   }
-  requireThat(root !== homedir() && root !== dirname(root), "E_PROJECT", "Choose a project directory, not the home or filesystem root");
+  // A distinct code lets callers tell an ineligible directory apart from a real discovery failure.
+  requireThat(root !== homedir() && root !== dirname(root), "E_NOT_PROJECT", "Choose a project directory, not the home or filesystem root");
   return { root, gitCommonDir: null, room: roomOverride ? resolve(roomOverride) : join(root, ".agentchat") };
 }
