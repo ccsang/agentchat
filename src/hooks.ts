@@ -97,9 +97,10 @@ export function pluginHook(input: HookInput, event: "SessionStart" | "SessionEnd
   requireThat(input && input.hook_event_name === event, "E_HOOK", "Unexpected plugin hook event");
   if (input.agent_id) return {};
   let project: Project;
-  // Globally loaded plugin hooks stay silent outside any eligible project (home, filesystem root, non-Git).
+  // Globally loaded plugin hooks stay silent only in ineligible directories (home, filesystem root).
+  // Git discovery failures (E_PROJECT) must surface, or an initialized project would silently skip recovery.
   try { project = discoverProject(input.cwd); }
-  catch (error) { if ((error as { code?: string }).code === "E_PROJECT") return {}; throw error; }
+  catch (error) { if ((error as { code?: string }).code === "E_NOT_PROJECT") return {}; throw error; }
   if (event === "SessionStart") return registerHook(project, input, env, true);
   endHook(project, input, env); return {};
 }

@@ -150,6 +150,16 @@ test("plugin hooks stay silent outside any eligible project but still report mal
   expect(cli.status).toBe(0); expect(JSON.parse(cli.stdout)).toEqual({}); expect(cli.stderr).toBe("");
   expect(() => pluginHook({ ...input("SessionEnd"), cwd: "/" }, "SessionStart", envFor())).toThrow();
 });
+test("plugin hooks report Git discovery failures in an initialized project instead of staying silent", async () => {
+  git(f.root, ["init", "-b", "main"]);
+  git(f.root, ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-m", "fixture"]);
+  const project = discoverProject(f.root); applyInstall(await planInstall(project, { autoJoin: true }));
+  const cli = spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), "hook", "plugin-session-start"],
+    { cwd: f.root, env: { ...envFor(), AGENTCHAT_GIT_BIN: join(host.root, "missing-git") }, input: JSON.stringify(input()), encoding: "utf8" });
+  expect(cli.status).toBe(1); expect(cli.stdout).toBe("");
+  expect(JSON.parse(cli.stderr).error.code).toBe("E_PROJECT");
+  expect(existsSync(join(project.room, "chat.db"))).toBe(false);
+});
 test("upgrading retires owned private Channel launchers without touching user launchers", async () => {
   mkdirSync(f.project.room, { mode: 0o700 });
   const old = join(f.project.room, "claude.command"); writeFileSync(old, '#!/bin/sh\n# AgentChat managed Claude entry. Host confirmations remain interactive.\nexit 0\n', { mode: 0o700 });

@@ -22,6 +22,7 @@ const failures: Record<string, { cause: string; reason: string; rebind?: boolean
   E_PEER_KIND: { cause: "client_incompatible", reason: "Native socket reception requires an interactive Claude CLI session." },
   E_PERMISSIONS: { cause: "unsafe_permissions", reason: "Native peer ownership, permissions or file type are unsafe; inspect the host files without weakening their protection." },
   E_PROJECT: { cause: "project_mismatch", reason: "The bound native peer belongs to a different project." },
+  E_NOT_PROJECT: { cause: "project_mismatch", reason: "The bound native peer runs outside any eligible project." },
   E_IDENTITY: { cause: "session_mismatch", reason: "The bound native peer belongs to a different registered session." },
   E_RECEIVER: { cause: "session_ended", reason: "The native session ended; its own SessionStart or an explicit live-peer repair is required.", rebind: true },
   E_CONFIG: { cause: "workspace_disabled", reason: "The workspace integration is disabled or its configuration is invalid." },
