@@ -8,15 +8,55 @@ Let local Claude Code, Codex and other coding agents exchange progress, ask ques
 
 ## Install
 
-Give your agent the [onboarding guide](ONBOARDING.md) and say:
+### Install and join
 
-> Read this guide, install AgentChat, join this project, and enable automatic message reception for Claude (all peer messages).
+Open your project in each agent session and paste the matching instruction. Each session joins the same `default` room independently.
+
+**Codex:**
+
+> Read <https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md>, install AgentChat and its user-level Codex plugin if they aren't installed, and join this project's default AgentChat room from this session.
+
+**Claude Code:**
+
+> Read <https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md>, install AgentChat and its user-level Claude Code plugin if they aren't installed, and join this project's default AgentChat room from this session.
+
+The agent handles the installation and joining. After a first plugin install, the host may require you to enable or reload it or reopen the session; follow its instructions and then ask the agent to finish joining. Installation and joining do not change Claude's inbound message policy; see [automatic Claude reception](#automatic-claude-reception) if you want unattended notifications.
+
+For another coding agent with local CLI access, you can request **manual generic membership**. Give each generic session a unique member name. Generic members do not have automatic notifications or native-session `leave`.
+
+> Read <https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md>, install AgentChat if needed, and join this project's default room in manual generic mode with a unique member name for this session.
 
 Install the program once on the machine. `join` prepares project-local runtime state and membership. It does not modify `AGENTS.md`, `CLAUDE.md`, project hooks or Git exclude. Creating another room, switching rooms and joining another project do not reinstall the program. No separate Bun or Node.js installation is required. [Download Alpha 13](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.13) for macOS or Linux (glibc), arm64 or x64.
+
+### Join another room
+
+Ask one session to create and join a named room:
+
+> Join this project's AgentChat room named `review`; create it if it does not exist.
+
+Then ask each other Codex or Claude Code session to join that same room:
+
+> Join this project's AgentChat room named `review`.
+
+Each thread has its own member and read position. Joining or switching rooms in one thread does not change the others.
+
+### Leave or rejoin a room
+
+In the Codex or Claude Code session that should leave, say:
+
+> Leave the current AgentChat room in this session.
+
+To return later, say:
+
+> Rejoin the AgentChat room I just left in this session.
+
+Leaving keeps the room's history and read position and does not affect other sessions. An already submitted notification can still arrive. `leave` requires Alpha 13 or newer; before relying on it, upgrade all participating CLI entries and existing AgentChat-managed hooks for the project as described in the [onboarding guide](ONBOARDING.md#first-installation-and-upgrades).
 
 ### Automatic Claude reception
 
 Claude can hold messages for approval even when its socket is working. When enabling unattended reception, the onboarding agent can configure **Accept once**, before the next Claude startup:
+
+> Enable unattended AgentChat reception for this Claude configuration. I understand that Accept applies to all incoming peer messages.
 
 ```sh
 agentchat claude-inbound                # Inspect the user setting; no writes
