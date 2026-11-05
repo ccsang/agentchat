@@ -8,11 +8,49 @@
 
 ## 安装
 
-把 [安装与接入说明](https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md) 发给当前项目中的 Claude Code 或 Codex，并告诉它：
+### 安装并加入
 
-> 阅读这个链接，安装 AgentChat 程序，然后加入当前项目协作。
+分别在项目的各个 agent 会话中，复制对应的提示语。每个会话都会独立加入同一个 `default` 房间。
 
-程序本机安装一次；`join` 只准备本地运行状态、加入房间，不修改 `AGENTS.md`、`CLAUDE.md` 或 hooks 配置。换项目、开新会话、建房和切房都不需要重装。无需另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.13)。
+**Codex：**
+
+> 阅读 <https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md>，如果尚未安装，就安装 AgentChat 和用户级 Codex 插件，然后从当前会话加入这个项目的 default AgentChat 房间。
+
+**Claude Code：**
+
+> 阅读 <https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md>，如果尚未安装，就安装 AgentChat 和用户级 Claude Code 插件，然后从当前会话加入这个项目的 default AgentChat 房间。
+
+安装和加入由 agent 完成。首次安装插件后，宿主可能要求启用或重新加载插件，或重新打开会话；按提示操作后，让 agent 继续完成加入。安装和加入不会改变 Claude 的入站消息策略；需要无人值守通知时，参见 [Claude 自动收信](#claude-启动与自动收信)。
+
+其他可以访问本机 CLI 的 coding agent 可以使用**手动 generic 成员**；每个会话应使用唯一名称。generic 成员不支持自动通知或按原生会话退出。
+
+> 阅读 <https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md>，按需安装 AgentChat，然后为当前会话选择一个唯一成员名，以手动 generic 模式加入这个项目的 default 房间。
+
+程序本机安装一次；`join` 只准备本地运行状态、加入房间，不修改 `AGENTS.md`、`CLAUDE.md` 或项目 hooks 配置。换项目、开新会话、建房和切房都不需要重装。无需另装 Bun / Node.js。支持 macOS、Linux（glibc）的 arm64 / x64；[下载 Alpha 安装包](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.13)。
+
+### 加入其他房间
+
+先告诉一个会话创建并加入指定房间：
+
+> 加入这个项目名为 `review` 的 AgentChat 房间；如果房间不存在，就先创建。
+
+再分别告诉其他 Codex 或 Claude Code 会话加入同一个房间：
+
+> 加入这个项目名为 `review` 的 AgentChat 房间。
+
+每个 thread 都有自己的成员身份和阅读进度，一个 thread 加入或切房不会改变其他 thread。
+
+### 退出或重新加入房间
+
+在需要退出的 Codex 或 Claude Code 会话中说：
+
+> 让当前会话退出当前的 AgentChat 房间。
+
+之后想回来时说：
+
+> 让当前会话重新加入刚才退出的 AgentChat 房间。
+
+退出会保留房间历史和阅读进度，不影响其他会话；退出前已提交的通知仍可能迟到。`leave` 需要 Alpha 13 或更新版本；使用前需按[接入说明](ONBOARDING.md#首次接入与升级)升级项目中所有参与者的 CLI 入口和已有 AgentChat 托管 hooks。
 
 希望新会话能发现 AgentChat 时，按[插件接入说明](ONBOARDING.md#插件与自动-hooks)为使用的客户端安装用户级插件。Claude Code 和 Codex 共用同一份薄 skill，只负责找到工具；完整操作规范由实际执行的 CLI 提供：
 
@@ -55,6 +93,8 @@ agentchat install --hooks --apply        # 明确启用 hooks，不写项目指�
 ## Claude 启动与自动收信
 
 需要自动收信时，agent 可以按用户明确选择，在下一次 Claude 启动前设置一次用户级 Accept：
+
+> 为这个 Claude 配置启用 AgentChat 无人值守收信；我了解 Accept 会应用于所有发来的 peer 消息。
 
 ```sh
 agentchat claude-inbound                # 只读检查用户设置
