@@ -12,7 +12,7 @@ import type { HookInput } from "./hooks.ts";
 import type { Identity, Member, Project } from "./types.ts";
 import { recordProbeReply, startProbe } from "./probe.ts";
 import { automaticSocket, configureSocket } from "./socket-state.ts";
-import { createRoom, listRooms, resolveRoom, roomExists, roomName, selectRoom, withRoomSelection } from "./rooms.ts";
+import { createRoom, describeMembers, leaveSelectedRoom, listRooms, memberLeft, rejoinRoom, resolveRoom, roomExists, roomName, selectedRoom, selectRoom, withRoomSelection } from "./rooms.ts";
 import { setupProgram } from "./program.ts";
 import { getSkill, listSkills } from "./skills.ts";
 import { applyClaudeInbound, claudeInboundStatus, INBOUND_CHOICES, planClaudeInbound, previewClaudeInbound } from "./claude-inbound.ts";
@@ -27,6 +27,7 @@ Skills (read-only, no project or native identity required):
 
 Daily commands (project and native identity are discovered automatically):
   join [--room NAME] [--name NAME]    Join/select a room; prepare local state without changing project files.
+  leave                              Leave this session's selected room; preserve history and cursors.
   room create NAME                   Create a room without reinstalling the program or project.
   room list | current                Inspect rooms without changing selection.
   room use NAME                      Join/select an existing room for this native session only.
@@ -63,7 +64,27 @@ async function joinProject(project: Project, identity: Identity, name?: string):
       const automatic = member.runtime === "claude" ? automaticSocket(project, member) : undefined;
       if (automatic) saveState(project, { ...state(project, member), session: member.session_ref!, active: true, memberId: member.id,
         error: automatic.state === "unavailable" ? { reason: String(automatic.reason), code: automatic.code as string | undefined, at: Date.now() } : undefined });
-      return { ok: true, joined: true, project, room: roomName(project), member, members: store.members(), initialization, automatic_reception: automatic, reception: receiver(project, member) };
+      return { ok: true, joined: true, project, room: roomName(project), member, members: describeMembers(project, store.members()), initialization, automatic_reception: automatic, reception: receiver(project, member) };
+    } finally { store.close(); }
+  });
+}
+
+async function leaveProject(project: Project, identity: Identity): Promise<Record<string, unknown>> {
+  // Refuse an unrelated/unjoined project without initializing runtime state.
+  const before = selectedRoom(project, identity);
+  if (before === null) return { ok: true, left: false, room: null, selected_room: null };
+  requireThat(roomExists(resolveRoom(project, before)), "E_NOT_JOINED", "This native session has not joined its selected room");
+  return withRoomSelection(project, identity, async () => {
+    const selected = selectedRoom(project, identity);
+    if (selected === null) return { ok: true, left: false, room: null, selected_room: null };
+    const room = resolveRoom(project, selected);
+    requireThat(roomExists(room), "E_NOT_JOINED", "This native session has not joined its selected room");
+    const store = new Store(room.room, { readonly: true });
+    try {
+      const member = store.actor(identity);
+      leaveSelectedRoom(room, identity);
+      return { ok: true, left: true, room: selected, selected_room: null, member_id: member.id,
+        history_preserved: true, note: "Already submitted notifications may still arrive. Explicitly join to participate again." };
     } finally { store.close(); }
   });
 }
@@ -130,20 +151,29 @@ export async function runCli(args: readonly string[]): Promise<number> {
     }
     requireThat(p.length === (command === "room" ? p[1] === "create" || p[1] === "use" ? 3 : 2 : hook || command === "notify" ? 2 : 1), "E_USAGE", "Unexpected positional arguments");
     const specific: Record<string, string[]> = {
-      join: ["name", "generic"], room: [], members: [], send: ["to", "reply-to", "notify", "id", "text", "stdin"],
+      join: ["name", "generic"], leave: [], room: [], members: [], send: ["to", "reply-to", "notify", "id", "text", "stdin"],
       read: ["new", "after", "id", "mark", "limit"], install: ["apply", "instructions", "hooks", "auto-join", "no-auto-join", "budget", "window-seconds", "codex-bin"],
       uninstall: ["apply", "instructions", "hooks"], doctor: [], probe: ["to"], notify: ["to"], hook: ["agentchat-managed"], "socket-config": ["apply", "to", "disable"],
     };
     const allowed = new Set(["project", "room", "as", "json", ...(specific[command ?? ""] ?? [])]);
     for (const key of Object.keys(v)) requireThat(allowed.has(key), "E_USAGE", `--${key} is not valid for ${command}`);
     const base = discoverProject(v.project ?? process.cwd());
-    requireThat(!v.room || !["room", "install", "uninstall", "hook"].includes(command ?? ""), "E_USAGE", "Project setup and room management do not take --room; use room use NAME");
-    const physical = command === "install" || command === "uninstall" || command === "hook" || command === "room";
+    requireThat(!v.room || !["room", "install", "uninstall", "hook", "leave"].includes(command ?? ""), "E_USAGE", "Project setup, room management and leave do not take --room; use room use NAME");
+    const physical = command === "install" || command === "uninstall" || command === "hook" || command === "room" || command === "leave";
     const identity = command === "join" ? v.generic ? { runtime: "generic" as const, session: null } : identify() : physical ? undefined : optionalIdentity();
-    requireThat(!v.room || !physical, "E_USAGE", "Project hooks follow session room selection; they do not accept --room");
-    const project = physical ? base : resolveRoom(base, v.room, identity);
+    requireThat(!v.room || !physical, "E_USAGE", "This command follows session room selection and does not accept --room");
+    if (command === "doctor" && !v.room && identity && selectedRoom(base, identity) === null) {
+      console.log(JSON.stringify({ ok: true, project: base, identity, joined: false, member: null,
+        diagnostic: { code: "E_NOT_JOINED", reason: "This session left its room; explicitly join to participate again." }, reception: null, room_name: null }));
+      return 0;
+    }
+    const selector = v.room ?? (command === "join" && identity ? rejoinRoom(base, identity) : undefined);
+    const project = physical ? base : resolveRoom(base, selector, identity);
     let result: unknown;
-    if (command === "room") {
+    if (command === "leave") {
+      requireThat(!v.as, "E_IDENTITY", "Leave uses the current native session, not a supplied member profile");
+      result = await leaveProject(base, identify());
+    } else if (command === "room") {
       requireThat(!v.as, "E_IDENTITY", "Room selection uses the current native session, not a supplied member profile");
       if (p[1] === "create") result = createRoom(base, p[2]!);
       else if (p[1] === "list" || p[1] === "current") result = listRooms(base, optionalIdentity());
@@ -173,6 +203,7 @@ export async function runCli(args: readonly string[]): Promise<number> {
       if (member?.runtime === "claude") {
         try { claudeInbound = claudeInboundStatus(); } catch (error) { claudeInbound = errorResult(error); }
       }
+      const left = member ? memberLeft(project, member) : false;
       let reception = member ? receiver(project, member) : null;
       if (member?.runtime === "codex") {
         let transport: Record<string, unknown>;
@@ -185,7 +216,7 @@ export async function runCli(args: readonly string[]): Promise<number> {
         } catch { transport = { state: "unknown", scope: "command_capability", exact_session_reachable: null, reason: "Queue capability configuration could not be inspected." }; }
         reception = { ...reception, transport };
       }
-      result = { ok: true, project, identity, joined: !!member, member, diagnostic, reception,
+      result = { ok: true, project, identity, joined: !!member && !left, member: member ? { ...member, membership: left ? "left" : "joined" } : null, diagnostic, reception,
         ...(claudeInbound ? { claude_inbound: claudeInbound } : {}) };
     } else {
       requireThat(["join", "members", "send", "read", "notify", "probe", "socket-config"].includes(command ?? ""), "E_USAGE", "Unknown command; use --help");
@@ -201,12 +232,15 @@ export async function runCli(args: readonly string[]): Promise<number> {
             const host = identify();
             requireThat(host.runtime === member.runtime && host.session === member.session_ref, "E_IDENTITY", "Native writes must use the current host session, not another member's profile");
           }
+          if (requireSelf) requireThat(!memberLeft(project, member), "E_NOT_JOINED", "This session left the room; explicitly rejoin before writing or marking messages");
           return member;
         };
-        if (command === "members") result = { ok: true, project, members: store.members() };
+        if (command === "members") result = { ok: true, project, members: describeMembers(project, store.members()) };
         else if (command === "send") {
           requireThat((v.text !== undefined) !== !!v.stdin, "E_USAGE", "Provide exactly one of --text or --stdin");
-          const sent = store.send({ from: actor(true).id, to: v.to, replyTo: v["reply-to"], body: v.stdin ? await stdin(8192) : v.text!, notify: v.notify, id: v.id });
+          const sender = actor(true), body = v.stdin ? await stdin(8192) : v.text!;
+          const sent = await withRoomSelection(project, { runtime: sender.runtime, session: sender.session_ref }, async () =>
+            store!.send({ from: actor(true).id, to: v.to, replyTo: v["reply-to"], body, notify: v.notify, id: v.id }));
           // Probe proof and notification are independent: one failing must not hide the other.
           let probeProof: unknown;
           if (sent.message.reply_to?.startsWith("probe-")) {
@@ -224,7 +258,12 @@ export async function runCli(args: readonly string[]): Promise<number> {
           requireThat([v.new, v.after !== undefined, v.id !== undefined, v.mark !== undefined].filter(Boolean).length <= 1, "E_USAGE", "Choose one read mode");
           const me = actor(v.mark !== undefined);
           if (v.id) result = { ok: true, message: store.message(v.id) };
-          else if (v.mark !== undefined) result = { ok: true, read_seq: store.mark(me.id, number(v.mark, "mark")!) };
+          else if (v.mark !== undefined) {
+            const readSeq = await withRoomSelection(project, { runtime: me.runtime, session: me.session_ref }, async () => {
+              actor(true); return store!.mark(me.id, number(v.mark, "mark")!);
+            });
+            result = { ok: true, read_seq: readSeq };
+          }
           else result = { ok: true, ...store.read(number(v.after, "after") ?? me.read_seq, number(v.limit, "limit")) };
         } else if (command === "probe") result = await startProbe(store, project, v.to ? store.member(v.to) : actor());
         else if (command === "socket-config") {

@@ -8,10 +8,11 @@ import { privateDirectory } from "./files.ts";
 import { notice } from "./notify.ts";
 import type { Member, Project } from "./types.ts";
 import type { Store } from "./store.ts";
-import { memberRoomSelected } from "./rooms.ts";
+import { memberLeft, memberRoomSelected } from "./rooms.ts";
 import { lifecycleStatus, peerFailure, socketRecovery } from "./reception-diagnostics.ts";
 
 export async function dispatchSocket(store: Store, project: Project, member: Member): Promise<Record<string, unknown>> {
+  if (memberLeft(project, member)) return { state: "held", reason: "member_left", automatic_retry: false };
   if (state(project, member)?.active === false) return { state: "unavailable", reason: "native_session_ended" };
   if (socketDisabled(project, member)) return { state: "unavailable", reason: "Native socket reception was explicitly disabled" };
   if (!memberRoomSelected(project, member)) return { state: "held", reason: "room_not_selected", automatic_retry: false };

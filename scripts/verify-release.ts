@@ -146,6 +146,20 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
   const received = JSON.parse(run(readArgv[0]!, readArgv.slice(1), undefined, queueHost, root));
   assert(received.room_name === "review" && received.messages.some((message: { id: string }) => message.id === "compact-release"), "Delayed compact notice read another room or cwd");
   assert(JSON.parse(run(globalCli, ["--project", project, "room", "current"], undefined, queueHost)).current === "default", "Compact notice changed room selection");
+  run(globalCli, ["--project", project, "room", "use", "review"], undefined, queueHost);
+  const reviewPage = JSON.parse(run(globalCli, ["--project", project, "read", "--new"], undefined, queueHost));
+  run(globalCli, ["--project", project, "read", "--mark", String(reviewPage.next_cursor)], undefined, queueHost);
+  const left = JSON.parse(run(globalCli, ["--project", project, "leave"], undefined, queueHost));
+  assert(left.left && left.room === "review" && left.selected_room === null, "Compiled leave did not clear the exact session's selected room");
+  assert(JSON.parse(run(globalCli, ["--project", project, "room", "current"], undefined, queueHost)).current === null, "Compiled leave silently selected another room");
+  assert(invoke(["--room", "review", "members"]).members.find((member: { id: string }) => member.id === queueMember.id)?.membership === "left", "Compiled member list did not show the departed session");
+  const oldNotice = readFileSync(capture, "utf8");
+  const held = JSON.parse(run(globalCli, ["--project", project, "--room", "review", "send", "--to", queueMember.id, "--id", "left-fixture", "--text", "not notified", "--notify"], undefined, { ...host, AGENTCHAT_NOTICE_CAPTURE: capture }));
+  assert(held.notification.reason === "member_left" && readFileSync(capture, "utf8") === oldNotice, "Compiled leave submitted a new notification");
+  const heldMessage = JSON.parse(run(globalCli, ["--project", project, "--room", "review", "read", "--id", "left-fixture"], undefined, host));
+  assert(heldMessage.message.notify_batch_id === null, "Compiled leave consumed a notification reservation");
+  const rejoined = JSON.parse(run(globalCli, ["--project", project, "join"], undefined, queueHost));
+  assert(rejoined.room_name === "review" && rejoined.member.id === queueMember.id && rejoined.member.read_seq === reviewPage.next_cursor, "Compiled rejoin lost the member or read position");
   // Synthetic native peer: the compiled hook is its direct child, with no model involved.
   const peerDirectory = mkdtempSync("/tmp/acr-"), peerPath = join(peerDirectory, `${process.pid}.sock`), restartSession = randomUUID();
   chmodSync(peerDirectory, 0o700);
@@ -223,6 +237,15 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
     run(globalCli, ["--project", project, "socket-config", "--disable", "--apply"], undefined, restartHost);
     run("/bin/sh", [pluginWrapper, "session-end"], end); run("/bin/sh", [pluginWrapper, "session-start"], resume);
     assert(JSON.parse(run(globalCli, ["--project", project, "doctor"], undefined, restartHost)).reception.state === "disabled", "Compiled resume re-enabled an explicitly disabled receiver");
+    for (const autoJoin of [false, true]) {
+      invoke(["install", autoJoin ? "--auto-join" : "--no-auto-join", "--apply"]);
+      assert(JSON.parse(run(globalCli, ["--project", project, "leave"], undefined, restartHost)).left, "Compiled Claude leave failed");
+      const stayedLeft = JSON.parse(run("/bin/sh", [pluginWrapper, "session-start"], resume));
+      assert(stayedLeft.hookSpecificOutput.additionalContext.includes('"state":"left"'), "Compiled SessionStart rejoined a departed session");
+      assert(JSON.parse(run(globalCli, ["--project", project, "room", "current"], undefined, restartHost)).current === null, "Compiled SessionStart selected a room after leave");
+      const joinedAgain = JSON.parse(run(globalCli, ["--project", project, "join"], undefined, restartHost));
+      assert(joinedAgain.member.id === joined.member.id && joinedAgain.member.read_seq === page.next_cursor && joinedAgain.reception.state === "disabled", "Compiled Claude rejoin lost identity, cursor or explicit receiver disablement");
+    }
     await new Promise<void>(resolve => setImmediate(resolve));
     assert(peerConnections === 0, "Session restoration attempted a native notification");
   } finally { await new Promise<void>(resolve => peerServer.close(() => resolve())); rmSync(peerDirectory, { recursive: true, force: true }); }
@@ -247,6 +270,6 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
   const afterUninstall = randomUUID();
   assert(run("/bin/sh", [pluginWrapper, "session-start"], JSON.stringify({ session_id: afterUninstall, cwd: project, hook_event_name: "SessionStart" })) === "{}", "Plugin enrolled an uninstalled workspace");
   console.log(JSON.stringify({ ok: true, version, platform: process.platform, arch: process.arch,
-    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "plugin_compact_missing_env_and_idempotency", "managed_compact_missing_env_and_idempotency", "resume_existing_named_member_auto_join_off", "resume_rebinds_replaced_peer_without_model_proof", "claude_minimum_baseline_no_upper_cap", "specific_peer_compatibility_diagnostics", "sanitized_stale_binding_and_exact_repair", "codex_capability_is_not_nonce_proof", "lifecycle_observation_is_not_installation", "resume_preserves_new_session_opt_out_and_disabled_receiver", "inbound_preview_no_writes", "inbound_exact_backup_and_preserved_settings", "inbound_idempotency_and_reversal", "startup_inbound_policy_notice", "generated_english_instructions", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "compact_three_line_notification", "compact_routing_after_room_switch_from_other_cwd", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
+    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "plugin_compact_missing_env_and_idempotency", "managed_compact_missing_env_and_idempotency", "resume_existing_named_member_auto_join_off", "resume_rebinds_replaced_peer_without_model_proof", "leave_and_rejoin_exact_session", "leave_blocks_future_notification_submission", "left_claude_not_restored_with_auto_join_on_or_off", "claude_minimum_baseline_no_upper_cap", "specific_peer_compatibility_diagnostics", "sanitized_stale_binding_and_exact_repair", "codex_capability_is_not_nonce_proof", "lifecycle_observation_is_not_installation", "resume_preserves_new_session_opt_out_and_disabled_receiver", "inbound_preview_no_writes", "inbound_exact_backup_and_preserved_settings", "inbound_idempotency_and_reversal", "startup_inbound_policy_notice", "generated_english_instructions", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "compact_three_line_notification", "compact_routing_after_room_switch_from_other_cwd", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
     native_reception_verified: false }));
 } finally { rmSync(root, { recursive: true, force: true }); }

@@ -7,7 +7,7 @@ import { pause, paused, policy, receiver } from "./runtime.ts";
 export { pause, paused, resume } from "./runtime.ts";
 import { privateDirectory } from "./files.ts";
 import { tryLock } from "./lock.ts";
-import { memberRoomSelected, roomName } from "./rooms.ts";
+import { memberLeft, memberRoomSelected, roomName, tryRoomSelectionLock } from "./rooms.ts";
 import { integrationDir } from "./project.ts";
 
 export function notice(batch: Batch, project: Project): string {
@@ -32,6 +32,7 @@ export function inspectCodex(configured?: string): { bin: string; version: strin
   return null;
 }
 export function dispatchCodex(store: Store, project: Project, member: Member): Record<string, unknown> {
+  if (memberLeft(project, member)) return { state: "held", reason: "member_left", automatic_retry: false };
   if (!memberRoomSelected(project, member)) return { state: "held", reason: "room_not_selected", automatic_retry: false };
   notificationDirectory(project);
   const release = tryLock(join(project.room, "notifications", `${member.id}.lock`));
@@ -56,14 +57,21 @@ export function dispatchCodex(store: Store, project: Project, member: Member): R
   } finally { release(); }
 }
 export async function notifyMember(store: Store, project: Project, member: Member): Promise<Record<string, unknown>> {
-  if (!memberRoomSelected(project, member)) return { state: "held", reason: "room_not_selected", automatic_retry: false };
-  if (member.runtime === "codex") return dispatchCodex(store, project, member);
-  if (member.runtime === "claude") {
-    const { dispatchSocket } = await import("./socket-adapter.ts"); return dispatchSocket(store, project, member);
-  }
-  const stopped = paused(project, member);
-  if (stopped) return { state: stopped.kind === "host_blocked" ? "blocked" : "paused", reason: stopped.reason };
-  const reception = receiver(project, member);
-  return { state: "manual", reception, processed: false };
+  // Serialize dispatch against this exact session's leave/switch so leave cannot
+  // return while a newly validated notification is still being submitted.
+  const release = tryRoomSelectionLock(project, { runtime: member.runtime, session: member.session_ref });
+  if (!release) return { state: "held", reason: "room_selection_busy", automatic_retry: false };
+  try {
+    if (memberLeft(project, member)) return { state: "held", reason: "member_left", automatic_retry: false };
+    if (!memberRoomSelected(project, member)) return { state: "held", reason: "room_not_selected", automatic_retry: false };
+    if (member.runtime === "codex") return dispatchCodex(store, project, member);
+    if (member.runtime === "claude") {
+      const { dispatchSocket } = await import("./socket-adapter.ts"); return await dispatchSocket(store, project, member);
+    }
+    const stopped = paused(project, member);
+    if (stopped) return { state: stopped.kind === "host_blocked" ? "blocked" : "paused", reason: stopped.reason };
+    const reception = receiver(project, member);
+    return { state: "manual", reception, processed: false };
+  } finally { release(); }
 }
 export function notificationDirectory(project: Project): void { privateDirectory(join(project.room, "notifications")); }
