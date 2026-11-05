@@ -9,7 +9,7 @@ import { SOCKET_ADAPTER, validatePeer } from "./claude-peer.ts";
 import { socketBinding, socketDisabled, socketProof } from "./socket-state.ts";
 import { integrationDir } from "./project.ts";
 import { installation } from "./workspace.ts";
-import { legacyMember, memberRoomSelected, resolveRoom, roomName } from "./rooms.ts";
+import { legacyMember, memberLeft, memberRoomSelected, resolveRoom, roomName } from "./rooms.ts";
 import { sessionId } from "./identity.ts";
 import { lifecycleStatus, peerFailure, receptionCommand, socketRecovery } from "./reception-diagnostics.ts";
 import type { LifecycleObservation } from "./reception-diagnostics.ts";
@@ -45,6 +45,8 @@ export function listenerLock(project: Project, member: Member): string {
 }
 export function receiver(project: Project, member: Member, now = Date.now()): Record<string, unknown> {
   if (member.runtime === "generic") return { mode: "manual", state: "manual", reason: "No native wake adapter" };
+  if (memberLeft(project, member)) return { mode: member.runtime === "codex" ? "codex-queue" : SOCKET_ADAPTER,
+    state: "left", transport_alive: false, verification: "unverified", manual_read_available: true, reason: "This session left the room; explicitly rejoin to participate again." };
   if (!memberRoomSelected(project, member)) return { mode: member.runtime === "codex" ? "codex-queue" : SOCKET_ADAPTER,
     state: "room_not_selected", transport_alive: false, verification: "unverified", manual_read_available: true, reason: "This native session selected another room; messages remain readable" };
   const value = state(project, member);

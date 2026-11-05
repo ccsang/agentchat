@@ -8,7 +8,7 @@ import type { SessionState } from "./runtime.ts";
 import { readJson } from "./files.ts";
 import { requireThat } from "./errors.ts";
 import type { Member, Project } from "./types.ts";
-import { listRooms, resolveRoom, roomExists, roomName } from "./rooms.ts";
+import { listRooms, resolveRoom, roomExists, roomName, selectedRoom } from "./rooms.ts";
 import { installation, integrationSettings } from "./workspace.ts";
 import { automaticSocket } from "./socket-state.ts";
 import { standalone } from "./executable.ts";
@@ -50,10 +50,12 @@ export function registerHook(project: Project, input: HookInput, env: NodeJS.Pro
   saveState(project, { ...readJson<SessionState>(sessionPath(project, session)), session, active: true, lifecycle });
   let reception: Record<string, unknown> | undefined;
   const identity = { runtime: "claude" as const, session }, autoJoin = policy(project).autoJoin;
-  const selected = resolveRoom(project, undefined, identity);
+  const selection = selectedRoom(project, identity);
+  const selected = selection === null ? null : resolveRoom(project, selection, identity);
   // Resuming an exact existing member is independent of enrolling a new session.
   // With auto-join off, inspect only an existing room and never create members/data.
-  if (autoJoin || roomExists(selected)) {
+  if (!selected) reception = { state: "left", reason: "This session left its room; explicitly join to participate again." };
+  else if (autoJoin || roomExists(selected)) {
     const store = new Store(selected.room, autoJoin ? { create: true } : { readonly: true });
     try {
       let member: Member | undefined;

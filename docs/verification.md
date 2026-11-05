@@ -4,6 +4,12 @@ English | [Chinese translation](zh-CN/verification.md)
 
 Development environment: macOS arm64, Bun 1.3.14. Dates and results below belong to their recorded revision. Synthetic/unit/package checks do not verify delivery to a real model, and a later release never inherits native proof for another session or instance.
 
+## Alpha 13: per-session room exit (2026-11-05)
+
+Isolated native-session fixtures verify independent thread membership and cursors, default/named-room exit, retained history and explicit rejoin, multiple previously left rooms, no impersonation or unjoined-project initialization, and preserved uncertain reservations and pauses. Notification dispatch and writes share the session selection lock with leave; lock contention and held notifications consume no new reservation. Claude SessionStart does not rejoin a departed fixture even with autoJoin enabled.
+
+185 local tests, type checking, source build, macOS arm64 standalone verification and 44 English/Chinese document checks passed. The compiled package checks isolated Codex and Claude leave/rejoin, blocked notification submission, autoJoin on/off and retained explicit receiver disablement. Four-platform and public upgrade checks gate and follow publication. No real model notification or new native reception proof was produced.
+
 ## Alpha 12: stale-binding and Codex proof diagnostics (2026-11-01)
 
 [Issue #12](https://github.com/ccsang/agentchat/issues/12) reported a stale saved Claude PID without lifecycle integration, a successful explicit repair/current-session nonce, and no reverse Codex nonce. That report is separate from this revision's synthetic verification. Diagnostics now separate validation/connection, sanitize native metadata/credential exceptions, provide exact-member repair argv and distinguish configured hooks from observed SessionStart. Codex command capability is separate from no_nonce_proof, with unknown exact-thread reachability and an authorized reverse-probe hint.

@@ -3,9 +3,9 @@ import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { cli, fixture, git, testEnv } from "./helpers.ts";
-import { createRoom, roomProject, selectRoom } from "../src/rooms.ts";
+import { createRoom, leaveSelectedRoom, roomProject, selectRoom, tryRoomSelectionLock } from "../src/rooms.ts";
 import { Store } from "../src/store.ts";
-import { dispatchCodex } from "../src/notify.ts";
+import { dispatchCodex, notifyMember } from "../src/notify.ts";
 import { listenerLock, pause, paused, resume, saveState } from "../src/runtime.ts";
 import { privateDirectory } from "../src/files.ts";
 import { tryLock } from "../src/lock.ts";
@@ -51,6 +51,87 @@ test("room selection belongs to one native session and explicit read/send never 
   expect(cli(f.root, ["room", "current"], a).data.current).toBe("review");
   expect(cli(f.root, ["room", "use", "default"], a).data.member.read_seq).toBe(1);
   expect(cli(f.root, ["read", "--new"], a).data.messages[0].body).toBe("reply to default");
+});
+test("leaving affects only the current native session and explicit rejoin preserves its history", () => {
+  const a = identity(), b = identity();
+  cli(f.root, ["room", "create", "review"]);
+  const first = cli(f.root, ["join", "--room", "review"], a).data.member;
+  const second = cli(f.root, ["join", "--room", "review"], b).data.member;
+  const message = cli(f.root, ["send", "--text", "shared history"], b).data;
+  expect(cli(f.root, ["read", "--mark", String(message.seq)], a).status).toBe(0);
+  const left = cli(f.root, ["leave"], a);
+  expect(left.status).toBe(0); expect(left.data).toMatchObject({ left: true, room: "review", selected_room: null });
+  expect(cli(f.root, ["room", "current"], a).data.current).toBeNull();
+  expect(cli(f.root, ["doctor"], a).data).toMatchObject({ joined: false, room_name: null });
+  expect(cli(f.root, ["room", "current"], b).data.current).toBe("review");
+  const members = cli(f.root, ["members"], b).data.members;
+  expect(members.find((member: { id: string }) => member.id === first.id).membership).toBe("left");
+  expect(members.find((member: { id: string }) => member.id === second.id).membership).toBe("joined");
+  expect(cli(f.root, ["--room", "review", "read", "--new"], a).data.messages).toEqual([]);
+  expect(cli(f.root, ["--room", "review", "send", "--text", "after leaving"], a).data.error.code).toBe("E_NOT_JOINED");
+  const withheld = cli(f.root, ["send", "--to", first.id, "--notify", "--text", "not delivered"], b);
+  expect(withheld.data.notification).toMatchObject({ state: "held", reason: "member_left", automatic_retry: false });
+  expect(cli(f.root, ["--room", "review", "read", "--mark", String(withheld.data.seq)], a).data.error.code).toBe("E_NOT_JOINED");
+  const store = new Store(roomProject(f.project, "review").room, { readonly: true });
+  try { expect(store.message(withheld.data.message_id).notify_batch_id).toBeNull(); } finally { store.close(); }
+  expect(cli(f.root, ["leave"], a).data).toMatchObject({ left: false, selected_room: null });
+  const rejoined = cli(f.root, ["join"], a);
+  expect(rejoined.status).toBe(0); expect(rejoined.data.room_name).toBe("review");
+  expect(rejoined.data.member.id).toBe(first.id); expect(rejoined.data.member.read_seq).toBe(message.seq);
+  expect(cli(f.root, ["members"], b).data.members.find((member: { id: string }) => member.id === first.id).membership).toBe("joined");
+});
+test("leaving default does not silently select another room or affect an earlier left room", () => {
+  const a = identity(), b = identity();
+  const defaultMember = cli(f.root, ["join"], a).data.member; cli(f.root, ["join"], b);
+  cli(f.root, ["room", "create", "review"]);
+  const reviewMember = cli(f.root, ["room", "use", "review"], a).data.member;
+  expect(cli(f.root, ["leave"], a).data.room).toBe("review");
+  expect(cli(f.root, ["room", "use", "default"], a).data.member.id).toBe(defaultMember.id);
+  expect(cli(f.root, ["--room", "review", "members"], b).data.members.find((member: { id: string }) => member.id === reviewMember.id).membership).toBe("left");
+  expect(cli(f.root, ["leave"], a).data.room).toBe("default");
+  expect(cli(f.root, ["room", "current"], a).data.current).toBeNull();
+  expect(cli(f.root, ["members"], b).data.members.find((member: { id: string }) => member.id === defaultMember.id).membership).toBe("left");
+  expect(cli(f.root, ["join"], a).data.member.id).toBe(defaultMember.id);
+  expect(cli(f.root, ["--room", "review", "members"], b).data.members.find((member: { id: string }) => member.id === reviewMember.id).membership).toBe("left");
+});
+test("leave cannot impersonate another session or initialize an unrelated project", () => {
+  const a = identity(), b = identity();
+  expect(cli(f.root, ["leave"], a).data.error.code).toBe("E_NOT_JOINED");
+  expect(existsSync(f.project.room)).toBe(false);
+  const member = cli(f.root, ["join"], a).data.member; cli(f.root, ["join"], b);
+  expect(cli(f.root, ["--as", member.id, "leave"], b).data.error.code).toBe("E_IDENTITY");
+  expect(cli(f.root, ["--room", "default", "leave"], b).data.error.code).toBe("E_USAGE");
+  expect(cli(f.root, ["room", "current"], a).data.current).toBe("default");
+  expect(cli(f.root, ["room", "current"], b).data.current).toBe("default");
+});
+test("leaving and rejoining preserve uncertain reservations and the notification pause", () => {
+  const a = identity(), b = identity(), first = cli(f.root, ["join"], a).data.member, second = cli(f.root, ["join"], b).data.member;
+  const store = new Store(f.project.room);
+  try {
+    store.send({ from: second.id, to: first.id, id: "uncertain-before-leave", body: "reserved", notify: true });
+    const reservation = store.claim(first.id).batch!.id;
+    pause(f.project, first, "queue_outcome_unknown");
+    expect(cli(f.root, ["leave"], a).status).toBe(0);
+    expect(cli(f.root, ["join"], a).data.member.id).toBe(first.id);
+    expect(store.message("uncertain-before-leave").notify_batch_id).toBe(reservation);
+    expect(paused(f.project, first)?.reason).toBe("queue_outcome_unknown");
+  } finally { store.close(); }
+});
+test("notification dispatch cannot race a session leaving its room", async () => {
+  const store = new Store(f.project.room, { create: true });
+  const sender = store.join({ runtime: "generic", session: null }, "sender"), target = store.join({ runtime: "codex", session: randomUUID() });
+  const identity = { runtime: target.runtime, session: target.session_ref };
+  store.send({ from: sender.id, to: target.id, id: "leave-race", body: "pending", notify: true });
+  const release = tryRoomSelectionLock(f.project, identity)!;
+  try {
+    expect(await notifyMember(store, f.project, target)).toMatchObject({ state: "held", reason: "room_selection_busy" });
+    expect(store.message("leave-race").notify_batch_id).toBeNull();
+    leaveSelectedRoom(f.project, identity);
+  } finally { release(); }
+  try {
+    expect(await notifyMember(store, f.project, target)).toMatchObject({ state: "held", reason: "member_left" });
+    expect(store.message("leave-race").notify_batch_id).toBeNull();
+  } finally { store.close(); }
 });
 test("a new project can join a pre-created named room without creating an unused default database", () => {
   cli(f.root, ["room", "create", "review"]);

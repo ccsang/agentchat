@@ -4,6 +4,14 @@ English | [Chinese translation](zh-CN/implementation-plan.md)
 
 Use the current self-onboarding design. Historical milestones below record completed work; Channel and timed hooks are retired and must not be restored as setup instructions. Native model tests remain separate from synthetic/unit/package checks.
 
+## Alpha 13: per-session room exit
+
+- [x] Leave only the current native session's selected room, retain member/history/cursor and show joined/left membership without claiming liveness.
+- [x] Serialize notification submission and native writes with selection changes; preserve reservations, uncertain pauses and other sessions' room selections.
+- [x] Prevent Claude lifecycle auto-join from reversing an explicit exit; allow only explicit rejoin to restore participation.
+- [x] Verify multi-thread isolation, persisted exit/rejoin, failures and the compiled executable using isolated fixtures.
+- [x] Synchronize English and Chinese onboarding; record public upgrade verification separately.
+
 ## Alpha 12: actionable reception diagnostics (issue #12)
 
 - [x] Separate sanitized pre-submit validation/connection failures and report exact-member repair argv without new reservations, process selection or replay.

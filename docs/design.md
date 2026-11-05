@@ -2,7 +2,7 @@
 
 English | [Chinese translation](zh-CN/design.md)
 
-This is the current agent-driven onboarding design, including the Alpha 12 reception diagnostics, minimum-version baseline and existing-session restoration. Historical Channel and timed Stop-hook approaches are recorded at the end; they are not supported setup instructions. Implementation and real-host evidence are distinguished in [verification.md](verification.md).
+This is the current agent-driven onboarding design, including Alpha 13 per-session room exit, reception diagnostics, the minimum-version baseline and existing-session restoration. Historical Channel and timed Stop-hook approaches are recorded at the end; they are not supported setup instructions. Implementation and real-host evidence are distinguished in [verification.md](verification.md).
 
 ## 1. Product scope and reliability
 
@@ -75,7 +75,9 @@ Initialize `journal_mode=DELETE`; connections use `foreign_keys=ON`, `busy_timeo
 
 `join` discovers the project/native identity, prepares local runtime state if needed and idempotently registers/selects an existing room. It returns the member, registered peers and actual reception capability. A missing named room is an error; only `room create` creates it.
 
-`members` reports registration facts. Address by stable ID or exact unique name; do not label a host online/idle without evidence.
+`leave` records the current native session's explicit exit from its selected room and selects no room. It preserves the member row, read cursor, history, reservations and pauses; a bare explicit `join` restores the last room left. Other sessions are unaffected. An explicit room read remains available after exit, while sends and marks require rejoining. Claude startup never reverses the exit, including with autoJoin enabled.
+
+`members` reports registration facts and joined/left membership. Address by stable ID or exact unique name; do not label a host online/idle without evidence.
 
 `send` supports shared progress, addressed messages and `--reply-to`. Replies target the parent sender; a conflicting explicit target is rejected. Targeting is not privacy: room members can read the entire stream. Explicit `--notify` requires another target and is never allowed to notify oneself. Broadcasts, routine progress, thanks and acknowledgments do not notify by default.
 
@@ -118,6 +120,8 @@ Default join/room use/install never reads or changes business instruction files,
 The default room keeps its original `chat.db`; named rooms use `rooms/<name>/chat.db`. Every room still has only members/messages, with independent IDs, cursors, budgets and reservations. Names are 1–64 lowercase letters/digits/underscore/hyphen, never arbitrary paths.
 
 Selection is stored per project/runtime/native session. `room create` only creates, list/current are read-only, use/join selects an existing room. An explicit `--room` on a message command routes only that operation. Only a selected room receives new notifications. Worktrees share rooms but initialize and opt into automatic joining independently.
+
+The same atomic session selection metadata stores an explicit no-room state and the rooms that session left, without a schema change. Join, leave and native notification submission coordinate with the session selection lock. Notifications already submitted may arrive after leave; while left, attempts remain unreserved. Rejoin does not dispatch them, although a later send can batch still-eligible pending notifications. Older executable entries do not participate in this protocol and must be upgraded before relying on leave.
 
 Native socket endpoints can be reused across a session's rooms; credentials are not copied. Nonce proof remains room-specific; unknown pauses remain session/adapter-wide across rooms. A copied binding cannot bypass project validation using a cached cwd.
 

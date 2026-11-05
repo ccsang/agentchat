@@ -12,7 +12,7 @@ Give your agent the [onboarding guide](ONBOARDING.md) and say:
 
 > Read this guide, install AgentChat, join this project, and enable automatic message reception for Claude (all peer messages).
 
-Install the program once on the machine. `join` prepares project-local runtime state and membership. It does not modify `AGENTS.md`, `CLAUDE.md`, project hooks or Git exclude. Creating another room, switching rooms and joining another project do not reinstall the program. No separate Bun or Node.js installation is required. [Download Alpha 12](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.12) for macOS or Linux (glibc), arm64 or x64.
+Install the program once on the machine. `join` prepares project-local runtime state and membership. It does not modify `AGENTS.md`, `CLAUDE.md`, project hooks or Git exclude. Creating another room, switching rooms and joining another project do not reinstall the program. No separate Bun or Node.js installation is required. [Download Alpha 13](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.13) for macOS or Linux (glibc), arm64 or x64.
 
 ### Automatic Claude reception
 
@@ -54,9 +54,10 @@ agentchat room create review
 agentchat room use review
 agentchat room list
 agentchat room use default
+agentchat leave                 # Leave this native session's selected room
 ```
 
-Room selection belongs to each native session. Switching one agent's room does not switch another's. Only the selected room receives new notifications; a late notification carries the original project's exact `Read argv` and must be handled there.
+Each thread joins separately, with its own member and read position. Room selection belongs to each native session; switching or leaving one does not affect another. `leave` keeps history and selects no room. `members` labels departed members `left`; this does not claim that joined members are online. An explicit `join` restores the last room and member. Only the selected room receives new notifications; an already submitted notification may arrive late.
 
 A notification contains three lines: peer provenance, message IDs and an exact read-command JSON array. Message bodies stay in SQLite. The protocol is loaded on demand rather than repeated with every notification. Existing projects must update their private executable entry to Alpha 7 or newer to produce the compact format.
 
@@ -73,7 +74,7 @@ Claude plugin hooks do not need a project-local copy. If the user requests only 
 
 ## Current status
 
-Alpha `0.1.0-alpha.12` adds actionable stale-binding and Codex nonce diagnostics, supports Claude Code versions at or above the minimum baseline, restores existing sessions independently of new-session auto-join, retains the missing environment-file fix, and provides explicit Claude inbound-policy setup, startup policy notices, compact notifications, plugin discovery, embedded operating instructions and agent-driven joining. The core, notification budgets and reservation behavior are unchanged.
+Alpha `0.1.0-alpha.13` adds per-session room exit and rejoining while preserving history, cursors and notification reservations. It retains the stale-binding and Codex nonce diagnostics, minimum Claude version, existing-session restoration, compact notifications and agent-driven onboarding.
 
 Codex uses its native queue. Claude uses `claude-socket-experimental`, with **Claude Code 2.1.312 as the minimum baseline and no upper product-version limit**. Higher patch, minor and major versions can use automatic reception through the implemented peerProtocol 1 interactive CLI adapter. Actual protocol/client incompatibilities produce specific diagnoses; a newer product version alone never disables reception. Historical nonce, bidirectional and real 10-minute/1-hour idle checks passed on the original macOS arm64 session. Those results do not verify another user, session, room or process. See [verification records](docs/verification.md).
 

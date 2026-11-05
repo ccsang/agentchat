@@ -7,7 +7,7 @@ import { applyInstall, planInstall } from "../src/install.ts";
 import { pluginHook } from "../src/hooks.ts";
 import { Store } from "../src/store.ts";
 import { receiver, saveState, state } from "../src/runtime.ts";
-import { fixture, git, testEnv } from "./helpers.ts";
+import { cli, fixture, git, testEnv } from "./helpers.ts";
 import { createRoom, roomProject, selectRoom } from "../src/rooms.ts";
 import { discoverProject } from "../src/project.ts";
 import { workspaceDir } from "../src/workspace.ts";
@@ -76,6 +76,21 @@ test("auto-join opt-out and uninstall stop plugin enrollment", async () => {
   expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
   applyInstall(await planInstall(f.project, { uninstall: true }));
   expect(pluginHook(input(), "SessionStart", envFor())).toEqual({}); expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
+});
+test("a Claude session that left is not restored by SessionStart even when auto-join is enabled", async () => {
+  applyInstall(await planInstall(f.project, { autoJoin: true }));
+  const context = input(), env = envFor(); pluginHook(context, "SessionStart", env);
+  const store = new Store(f.project.room), identity = { runtime: "claude" as const, session: context.session_id };
+  try {
+    const member = store.actor(identity), native = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: context.session_id });
+    expect(cli(f.root, ["leave"], native).data.left).toBe(true);
+    const result = pluginHook(context, "SessionStart", env);
+    expect((result.hookSpecificOutput as { additionalContext: string }).additionalContext).toContain('"state":"left"');
+    expect(cli(f.root, ["room", "current"], native).data.current).toBeNull();
+    expect(store.members()).toHaveLength(1); expect(store.actor(identity).id).toBe(member.id);
+    const rejoined = cli(f.root, ["join"], native);
+    expect(rejoined.status).toBe(0); expect(rejoined.data.member.id).toBe(member.id);
+  } finally { store.close(); }
 });
 test("auto-join off never enrolls a new UUID in an existing selected room or takes over a same-named member", async () => {
   applyInstall(await planInstall(f.project, { autoJoin: false })); createRoom(f.project, "review");
