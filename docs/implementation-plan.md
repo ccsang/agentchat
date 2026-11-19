@@ -4,6 +4,19 @@ English | [Chinese translation](zh-CN/implementation-plan.md)
 
 Use the current self-onboarding design. Historical milestones below record completed work; Channel and timed hooks are retired and must not be restored as setup instructions. Native model tests remain separate from synthetic/unit/package checks.
 
+## Unreleased Alpha 14: presence, room visibility and agy
+
+The [agreed plan](plans/presence-and-agy.md) records native Claude design and source review on 2026-11-12. M1 and the instance-fenced M2 are implemented, including a fresh source receiver nonce. M3 implements native agy turn-based hooks and explicit room migration. The owner deferred idle wake. Native source round trips passed and the final Claude review found no blocking issues. [Native evidence](verification.md#unreleased-presence-and-lifecycle-source-work-2026-11-12) is separate from synthetic checks. None of these changes is in the downloadable Alpha 13 packages.
+
+- [x] M1: bounded read-only scoped presence and selected-room visibility, with no credential reads or query writes.
+- [x] M2: native provenance experiments and shared instance-fenced lifecycle/dispatch gate; exact-session source nonce.
+- [x] M3 source: agy conversation identity, native thin plugin, turn-based notification hooks and explicit single-room migration.
+- [x] Migration: backup/rollback/data preservation and actual Alpha 13 E_SCHEMA/rollback-write compatibility.
+- [x] M3 acceptance: native source hook round trip, final source review and final checks.
+- [x] Scope decision: the owner selected turn-based reception and deferred idle wake after the plugin MCP gate failed. No token-persistence product path.
+
+Coordinated participant upgrades and publication are outside the current scope and require a separate request.
+
 ## Alpha 13: per-session room exit
 
 - [x] Leave only the current native session's selected room, retain member/history/cursor and show joined/left membership without claiming liveness.

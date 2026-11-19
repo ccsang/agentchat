@@ -10,7 +10,7 @@ import { cli, fixture, git, testEnv } from "./helpers.ts";
 
 let f: ReturnType<typeof fixture>;
 beforeEach(() => { f = fixture(); }); afterEach(() => f.cleanup());
-test("join and room use leave tracked instructions, malformed hooks and git status unchanged", () => {
+test("join and room use leave tracked instructions, malformed hooks and git status unchanged", async () => {
   git(f.root, ["init", "-b", "main"]);
   writeFileSync(join(f.root, "AGENTS.md"), "Existing agent rules\n"); writeFileSync(join(f.root, "CLAUDE.md"), "Existing Claude rules\n");
   mkdirSync(join(f.root, ".claude")); writeFileSync(join(f.root, ".claude/settings.local.json"), "{malformed existing configuration\n");
@@ -69,7 +69,7 @@ test("hook integration does not read or rewrite instructions and preserves user 
   const after = JSON.parse(readFileSync(path, "utf8"));
   expect(after.hooks).toEqual({ Stop: [{ hooks: [user] }] }); expect(after.permissions.deny).toEqual(["user-rule"]);
   expect(integrationSettings(f.project)).toEqual({ instructions: false, hooks: false });
-  expect(registerHook(f.project, { session_id: randomUUID(), cwd: f.root, hook_event_name: "SessionStart" }, {})).toEqual({});
+  expect((await registerHook(f.project, { session_id: randomUUID(), cwd: f.root, hook_event_name: "SessionStart" }, {}))).toEqual({});
   expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
 });
 test("legacy setup is upgraded locally without repairing or deleting its existing project files", async () => {
@@ -85,7 +85,7 @@ test("legacy setup is upgraded locally without repairing or deleting its existin
   expect(readFileSync(join(f.root, ".claude/settings.local.json"), "utf8")).toBe("User changed this to invalid JSON");
   expect(integrationSettings(f.project)).toEqual({ instructions: true, hooks: true });
 });
-test("Channel stays retired even when legacy project hooks were explicitly installed", () => {
+test("Channel stays retired even when legacy project hooks were explicitly installed", async () => {
   const env = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: randomUUID() });
   expect(cli(f.root, ["join"], env).status).toBe(0);
   expect(cli(f.root, ["channel-config", "--apply"], env).data.error.code).toBe("E_RETIRED");
@@ -95,7 +95,7 @@ test("Channel stays retired even when legacy project hooks were explicitly insta
   expect(cli(f.root, ["install", "--hooks", "--apply"], env).status).toBe(0);
   expect(cli(f.root, ["channel-config", "--apply"], env).data.error.code).toBe("E_RETIRED");
 });
-test("a new worktree does not inherit optional integration from the shared metadata fallback", () => {
+test("a new worktree does not inherit optional integration from the shared metadata fallback", async () => {
   git(f.root, ["init", "-b", "main"]);
   git(f.root, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "fixture"]);
   expect(cli(f.root, ["install", "--instructions", "--hooks", "--apply"]).status).toBe(0);

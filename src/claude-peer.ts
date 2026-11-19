@@ -20,13 +20,13 @@ function meetsVersionBaseline(version: unknown): boolean {
 interface PeerRecord {
   pid: number; sessionId: string; cwd: string; procStart: string; version: string;
   peerProtocol: number; kind: string; entrypoint: string; messagingSocketPath: string;
-  status?: string; statusUpdatedAt?: number;
+  status?: string; statusUpdatedAt?: number; pidDomain?: string;
 }
 export interface PeerBinding {
   enabled: boolean; pid: number; session: string; procStart: string; version: string;
   cwd?: string; projectDir?: string;
   metadataPath: string; socketPath: string; realSocketPath: string; socketDev: number; socketIno: number;
-  instance: string; configuredAt: number;
+  instance: string; configuredAt: number; pidDomain?: string;
 }
 export function canonicalSocketPath(path: string): string {
   const info = lstatSync(path);
@@ -77,7 +77,8 @@ function inspect(project: Project, member: Member, path: string, expected?: Peer
   requireThat(socket.isSocket() && !socket.isSymbolicLink() && (!process.getuid || socket.uid === process.getuid()) && (socket.mode & 0o077) === 0, "E_PERMISSIONS", "Native socket must be an owned private socket");
   const binding = { enabled: true, pid: value.pid, session: value.sessionId, procStart: value.procStart, version: value.version, cwd: value.cwd, projectDir: integrationDir(project),
     metadataPath: path, socketPath, realSocketPath: canonicalSocketPath(socketPath), socketDev: socket.dev, socketIno: socket.ino,
-    instance: "", configuredAt: expected?.configuredAt ?? Date.now() };
+    instance: "", configuredAt: expected?.configuredAt ?? Date.now(),
+    ...(typeof value.pidDomain === "string" && value.pidDomain.length <= 256 ? { pidDomain: value.pidDomain } : {}) };
   binding.instance = createHash("sha256").update(JSON.stringify([binding.pid, binding.session, binding.procStart, binding.version,
     binding.realSocketPath, binding.socketDev, binding.socketIno])).digest("hex");
   requireThat(!expected || (expected.instance === binding.instance && expected.socketPath === socketPath), "E_PEER_INSTANCE_CHANGED", "Native socket instance changed; explicitly rebind and verify before sending");

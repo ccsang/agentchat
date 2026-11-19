@@ -108,8 +108,26 @@ export function memberLeft(project: Project, member: Member): boolean {
   if (!member.session_ref) return false;
   return readSelection(project, { runtime: member.runtime, session: member.session_ref })?.left_rooms?.includes(roomName(project)) ?? false;
 }
-export function describeMembers(project: Project, members: Member[]): (Member & { membership: "joined" | "left" })[] {
-  return members.map(member => ({ ...member, membership: memberLeft(project, member) ? "left" : "joined" }));
+export interface DescribedMember extends Member {
+  membership: "joined" | "left" | null;
+  selected_room: string | null;
+  selected_here: boolean | null;
+  selection_reason_code?: "no_native_selection" | "selection_unavailable";
+}
+export function describeMembers(project: Project, members: Member[]): DescribedMember[] {
+  return members.map(member => {
+    if (member.runtime === "generic" || !member.session_ref) return { ...member, membership: "joined", selected_room: null,
+      selected_here: null, selection_reason_code: "no_native_selection" };
+    try {
+      const selection = readSelection(project, { runtime: member.runtime, session: member.session_ref });
+      const selected = selection ? selection.name : "default", left = selection?.left_rooms?.includes(roomName(project)) ?? false;
+      return { ...member, membership: left ? "left" : "joined", selected_room: selected,
+        selected_here: !left && selected === roomName(project) };
+    } catch {
+      // Observation failure must neither invent a default nor weaken write validation.
+      return { ...member, membership: null, selected_room: null, selected_here: null, selection_reason_code: "selection_unavailable" };
+    }
+  });
 }
 export function tryRoomSelectionLock(project: Project, identity: Identity): (() => void) | null {
   const path = selectionPath(project, identity);

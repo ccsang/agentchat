@@ -2,7 +2,7 @@
 
 # AgentChat Lite v0.1 设计基线
 
-当前实现以最后的 Alpha 10 修订为准：Claude 插件自动加载生命周期 hooks，原生 socket 为唯一 Claude 接收路径，Channel 章节仅作历史设计。
+已发布基线为 Alpha 13：Claude 插件加载生命周期 hooks，原生 socket 为唯一 Claude 接收路径；Channel 章节只作历史设计。未发布 Alpha 14 源码已实现[在线/生命周期/agy 方案](plans/presence-and-agy.md)，agy 按轮 hooks 与显式房间迁移见 [源码指南](antigravity.md)，空闲唤醒已暂缓；原生证据见 [验证记录](verification.md)。
 
 本设计归纳自“设计本地通信方案”对话。以“agent 自助接入”和“Claude 持续接收”的修订覆盖此前手动接入及限时 hook 接收步骤；重型 AgentBus 方案和要求用户维持 Codex 轮询桥的版本不作为实现基线。
 
@@ -94,7 +94,7 @@ Codex / Claude / 其他 agent
 
 ### members
 
-列出登记事实，使用 ID 或精确名称寻址。没有证据时不标记在线、空闲或执行中。
+列出登记事实，使用 ID 或精确名称寻址。没有证据时不标记在线、空闲或执行中。 尚未发布的 M1 源码另外返回 selected_room / selected_here 与只读、有作用域的 presence；无法读取的选择 / 成员身份为 null 并附原因。presence 不控制通知投递。详见[已定方案](plans/presence-and-agy.md)。
 
 ### send
 

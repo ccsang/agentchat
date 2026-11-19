@@ -8,6 +8,7 @@ import { createServer } from "node:net";
 import { version } from "../package.json";
 import { testEnv } from "../tests/helpers.ts";
 import { processStart } from "../src/claude-peer.ts";
+import { Database } from "bun:sqlite";
 
 const { values } = parseArgs({ options: { binary: { type: "string" } } });
 if (!values.binary) throw new Error("Pass --binary with a native release executable");
@@ -259,6 +260,26 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
   assert(page.messages.length === 1 && page.messages[0].body === "standalone fixture", "SQLite read failed");
   const mark = JSON.parse(run(entry, ["read", "--as", bob.id, "--mark", String(page.next_cursor)]));
   assert(mark.read_seq === page.next_cursor, "Explicit mark failed");
+  invoke(["room", "create", "migration"]);
+  const migrationMember = invoke(["--room", "migration", "join", "--generic", "--name", "migration-fixture"]).member;
+  const oldMessage = invoke(["--room", "migration", "--as", migrationMember.id, "send", "--text", "preserve v1 history"]);
+  const migrationPreview = invoke(["--room", "migration", "migrate"]);
+  assert(!migrationPreview.applied && migrationPreview.from_schema === 1 && !migrationPreview.blocked_by_old_pins, "Compiled migration preview changed data or misclassified current pins");
+  const migrated = invoke(["--room", "migration", "migrate", "--apply"]);
+  assert(migrated.changed && migrated.to_schema === 2 && migrated.backup, "Compiled explicit migration failed");
+  const backupDb = new Database(migrated.backup, { readonly: true });
+  try { assert((backupDb.query("PRAGMA user_version").get() as { user_version: number }).user_version === 1 && backupDb.query("SELECT id FROM messages WHERE id=?").get(oldMessage.message_id), "Compiled migration backup is not consistent v1"); }
+  finally { backupDb.close(); }
+  const migratedDb = new Database(join(room, "rooms", "migration", "chat.db"));
+  try {
+    assert((migratedDb.query("PRAGMA user_version").get() as { user_version: number }).user_version === 2 && migratedDb.query("PRAGMA foreign_key_check").all().length === 0, "Compiled v2 has invalid schema/FKs");
+    migratedDb.query("INSERT INTO members(id,name,runtime,session_ref,created_at) VALUES(?,?,?,?,?)").run(`m_${randomUUID()}`, "agy-fixture", "agy", randomUUID(), Date.now());
+  } finally { migratedDb.close(); }
+  assert(invoke(["--room", "migration", "members"]).members.some((member: { runtime: string }) => member.runtime === "agy"), "Compiled v2 cannot read an agy fixture");
+  assert(invoke(["--room", "migration", "--as", migrationMember.id, "read", "--new"]).messages[0].id === oldMessage.message_id, "Compiled migration lost history");
+  const v2Message = invoke(["--room", "migration", "--as", migrationMember.id, "send", "--text", "v2 history"]);
+  assert(invoke(["--room", "migration", "--as", migrationMember.id, "read", "--mark", String(v2Message.seq)]).read_seq === v2Message.seq, "Compiled v2 send/mark failed");
+  assert(!invoke(["--room", "migration", "migrate", "--apply"]).changed && invoke(["migrate"]).from_schema === 1, "Compiled migration was not idempotent or affected another room");
   assert(invoke(["uninstall", "--apply"]).applied, "Uninstall failed");
   assert(readFileSync(join(project, "AGENTS.md"), "utf8") === "Existing project instructions\n", "Uninstall removed user instructions");
   assert(existsSync(join(room, "chat.db")), "Uninstall deleted history");
@@ -270,6 +291,6 @@ printf 'Queued message compact123 for thread %s.\\n' "$notice_thread"
   const afterUninstall = randomUUID();
   assert(run("/bin/sh", [pluginWrapper, "session-start"], JSON.stringify({ session_id: afterUninstall, cwd: project, hook_event_name: "SessionStart" })) === "{}", "Plugin enrolled an uninstalled workspace");
   console.log(JSON.stringify({ ok: true, version, platform: process.platform, arch: process.arch,
-    checks: ["no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "plugin_compact_missing_env_and_idempotency", "managed_compact_missing_env_and_idempotency", "resume_existing_named_member_auto_join_off", "resume_rebinds_replaced_peer_without_model_proof", "leave_and_rejoin_exact_session", "leave_blocks_future_notification_submission", "left_claude_not_restored_with_auto_join_on_or_off", "claude_minimum_baseline_no_upper_cap", "specific_peer_compatibility_diagnostics", "sanitized_stale_binding_and_exact_repair", "codex_capability_is_not_nonce_proof", "lifecycle_observation_is_not_installation", "resume_preserves_new_session_opt_out_and_disabled_receiver", "inbound_preview_no_writes", "inbound_exact_backup_and_preserved_settings", "inbound_idempotency_and_reversal", "startup_inbound_policy_notice", "generated_english_instructions", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "compact_three_line_notification", "compact_routing_after_room_switch_from_other_cwd", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
+    checks: ["explicit_single_room_migration_and_backup", "v2_read_write_mark_and_agy_constraint", "no_source_checkout", "no_external_bun", "no_dotenv_or_preload", "embedded_version_matched_skill", "program_setup_once", "preserve_unrelated_command", "plugin_compact_missing_env_and_idempotency", "managed_compact_missing_env_and_idempotency", "resume_existing_named_member_auto_join_off", "resume_rebinds_replaced_peer_without_model_proof", "leave_and_rejoin_exact_session", "leave_blocks_future_notification_submission", "left_claude_not_restored_with_auto_join_on_or_off", "claude_minimum_baseline_no_upper_cap", "specific_peer_compatibility_diagnostics", "sanitized_stale_binding_and_exact_repair", "codex_capability_is_not_nonce_proof", "lifecycle_observation_is_not_installation", "resume_preserves_new_session_opt_out_and_disabled_receiver", "inbound_preview_no_writes", "inbound_exact_backup_and_preserved_settings", "inbound_idempotency_and_reversal", "startup_inbound_policy_notice", "generated_english_instructions", "plugin_hooks_no_unrelated_initialization", "plugin_hooks_auto_join_and_cleanup", "plugin_hooks_opt_out_and_uninstall", "preview", "local_only_first_join", "explicit_optional_integration", "later_join_preserves_project", "named_rooms_without_reinstall", "compact_three_line_notification", "compact_routing_after_room_switch_from_other_cwd", "idempotency", "hooks", "no_channel_launcher", "sqlite_send_read_mark", "uninstall_preserves_history"],
     native_reception_verified: false }));
 } finally { rmSync(root, { recursive: true, force: true }); }

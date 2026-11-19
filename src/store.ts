@@ -1,9 +1,9 @@
 import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { ChatError, requireThat } from "./errors.ts";
-import { createPrivateFile, privateDirectory, regularFile } from "./files.ts";
+import { createPrivateFile, existingPrivateDirectory, privateDirectory, regularFile } from "./files.ts";
 import type { Batch, Identity, Member, Message, NotificationLimit, Page } from "./types.ts";
 import { sessionId } from "./identity.ts";
 
@@ -44,7 +44,19 @@ export class Store {
     const path = join(room, "chat.db");
     if (options.create) { privateDirectory(room); createPrivateFile(path); }
     requireThat(existsSync(path), "E_ROOM", "Room not found; join this project first");
-    privateDirectory(room); regularFile(path);
+    if (options.readonly) existingPrivateDirectory(room); else privateDirectory(room);
+    regularFile(path);
+    if (options.readonly) {
+      // Reject unsupported WAL before SQLite can create a -shm file on a read.
+      const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      try {
+        const info = fstatSync(fd), header = Buffer.alloc(20);
+        requireThat(info.isFile() && (!process.getuid || info.uid === process.getuid()) && (info.mode & 0o077) === 0,
+          "E_PERMISSIONS", "Room database must be an owned private regular file");
+        requireThat(readSync(fd, header, 0, header.length, 0) === header.length && header[18] === 1 && header[19] === 1,
+          "E_SCHEMA", "Expected SQLite rollback journal mode (DELETE)");
+      } finally { closeSync(fd); }
+    }
     for (const suffix of ["-journal", "-wal", "-shm"]) {
       try { regularFile(path + suffix); }
       catch (error) {
@@ -58,7 +70,7 @@ export class Store {
       if (options.create) this.db.transaction(() => {
         const app = (this.db.query("PRAGMA application_id").get() as { application_id: number }).application_id;
         const version = (this.db.query("PRAGMA user_version").get() as { user_version: number }).user_version;
-        requireThat((app === 0 || app === APP_ID) && version <= 1, "E_SCHEMA", "Unsupported database format");
+        requireThat((app === 0 || app === APP_ID) && version <= 2, "E_SCHEMA", "Unsupported database format");
         if (version === 0) {
           const count = this.db.query("SELECT count(*) n FROM sqlite_master WHERE type='table'").get() as { n: number };
           requireThat(count.n === 0, "E_SCHEMA", "Refusing to initialize an unrelated database");
@@ -67,12 +79,13 @@ export class Store {
       }).immediate();
       const format = this.db.query("PRAGMA application_id").get() as { application_id: number };
       const version = this.db.query("PRAGMA user_version").get() as { user_version: number };
-      requireThat(format.application_id === APP_ID && version.user_version === 1, "E_SCHEMA", "Room schema is missing or unsupported");
+      requireThat(format.application_id === APP_ID && [1, 2].includes(version.user_version), "E_SCHEMA", "Room schema is missing or unsupported");
       const mode = this.db.query("PRAGMA journal_mode").get() as { journal_mode: string };
       requireThat(mode.journal_mode === "delete", "E_SCHEMA", "Expected SQLite rollback journal mode (DELETE)");
     } catch (error) { this.db.close(); throw error; }
   }
   close(): void { this.db.close(); }
+  schemaVersion(): number { return (this.db.query("PRAGMA user_version").get() as { user_version: number }).user_version; }
   members(): Member[] { return this.db.query("SELECT * FROM members ORDER BY created_at,id").all() as Member[]; }
   member(ref: string): Member {
     const members = this.db.query("SELECT * FROM members WHERE id=? OR name=?").all(ref, ref) as Member[];
@@ -84,7 +97,8 @@ export class Store {
     requireThat(member, "E_NOT_JOINED", "This native session has not joined this project"); return member;
   }
   join(identity: Identity, name?: string): Member {
-    requireThat(["codex", "claude", "generic"].includes(identity.runtime), "E_IDENTITY", "Unknown runtime");
+    requireThat(["codex", "claude", "agy", "generic"].includes(identity.runtime), "E_IDENTITY", "Unknown runtime");
+    requireThat(identity.runtime !== "agy" || this.schemaVersion() === 2, "E_MIGRATION", "agy requires room schema v2. Preview agentchat migrate for this exact room, upgrade participating entries, then explicitly apply; join never migrates rooms.");
     if (identity.runtime !== "generic") sessionId(identity.session);
     const generated = `${identity.runtime}-${createHash("sha256").update(identity.session ?? randomUUID()).digest("hex").slice(0, 10)}`;
     const proposed = name ?? generated;

@@ -5,7 +5,7 @@ import { roomName } from "./rooms.ts";
 import { integrationSettings } from "./workspace.ts";
 import type { Member, Project } from "./types.ts";
 
-export interface LifecycleObservation { source: "plugin" | "project"; pid: number; at: number; root: string }
+export interface LifecycleObservation { source: "plugin" | "project"; pid: number; at: number; root: string; provenance?: "native_instance" | "unverified"; procStart?: string }
 const failures: Record<string, { cause: string; reason: string; rebind?: boolean; stale?: boolean }> = {
   E_PEER_PROCESS: { cause: "stale_process", reason: "The saved native Claude process is no longer running.", rebind: true, stale: true },
   E_PEER_PROCESS_CHANGED: { cause: "process_changed", reason: "The saved native PID now belongs to a different process instance.", rebind: true, stale: true },
@@ -17,6 +17,7 @@ const failures: Record<string, { cause: string; reason: string; rebind?: boolean
   E_PEER_AMBIGUOUS: { cause: "ambiguous_session", reason: "More than one live native process advertises this exact session; no process was selected." },
   E_PEER_NOT_FOUND: { cause: "peer_not_found", reason: "No verified live native peer matches this exact registered session.", rebind: true },
   E_PEER_REBIND: { cause: "authoritative_rebind_required", reason: "Changed native process requires its own SessionStart hook or explicit socket-config rebind.", rebind: true, stale: true },
+  E_HOOK_PROVENANCE: { cause: "hook_provenance_unverified", reason: "The lifecycle hook could not establish its exact native process instance; the current binding was preserved.", rebind: true },
   E_PEER_VERSION: { cause: "version_below_baseline_or_invalid", reason: `Claude Code ${SOCKET_MIN_VERSION} or newer is required; native version is missing, malformed or below the baseline.` },
   E_PEER_PROTOCOL: { cause: "protocol_incompatible", reason: "Incompatible native peerProtocol; this adapter implements peerProtocol 1." },
   E_PEER_KIND: { cause: "client_incompatible", reason: "Native socket reception requires an interactive Claude CLI session." },

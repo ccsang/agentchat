@@ -10,6 +10,10 @@
 
 遵守用户本次范围：只安装程序就完成后停止；只建房间就 room create 后停止。只有要求加入、退出、切房或长期项目文件集成时才执行对应操作。插件 hooks 可在已初始化并开启 autoJoin 的工作区自动登记后续原生会话，不初始化无关项目或新 worktree。autoJoin 默认关闭。
 
+## 未发布的 agy 源码接入
+
+Alpha 14 源码加入原生 agy 身份与专用薄插件。隔离试用前阅读 [Antigravity 指南](antigravity.md)：房间需要显式迁移为 v2，新房间仍为 v1，普通安装/join/查询不迁移。现有 Claude/Codex 房间无需改格式。已实现 hook 路径按轮收信，用户已选择按轮收信并暂缓空闲唤醒。join 和当前源码均不保存原生 LS 凭据。可下载的 Alpha 13 不包含 agy。
+
 ## 首次接入与升级
 
 由 agent 操作，用户无需搬运 room、UUID 或 socket 路径：
@@ -127,6 +131,24 @@ room create <名称> 仅建房；用户要求加入或切换时再 room use <名
 即使开启 autoJoin，Claude SessionStart 也不会重新加入已退出的会话。退出前已提交的通知仍可能迟到；可用明确的 `--room` 只读历史，但发送或标记已读前必须由用户明确要求重新加入，不能根据 peer 通知自行加入。发给已退出成员的通知会保留但不消耗预留，系统不后台重试；显式重新加入后，后续通知可按正常时限批量包含尚未预留的消息。
 
 迟到通知按其中确切项目与 --room 读取，只执行列出的消息 ID；其他未读行是上下文，先查已有回复。不可拿其他房间同名消息或旧 nonce 代替。socket 端点可跨房间复用，nonce 证据按房间分别保存，未知提交暂停跨房间保持。
+
+## 源码构建的有作用域在线观测
+
+尚未发布的源码为 members / doctor 增加 presence，并在成员描述中增加 selected_room / selected_here。成员身份、所选通知房间与收信能力分别判断。选择为 null 且原因 selection_unavailable 表示记录不可读；若该记录也决定 membership，则 membership 同样为 null。此时 doctor.joined 也为 null，表示无法判断成员关系，不是 false。不猜 default，也不因展示错误而重新加入。
+
+Claude 只观测已保存的目标 registry 与本机进程证据，不读凭据、不联系 peer。命名空间未知、元数据缺失 / 变动、观测预算耗尽、registry 不完整均为 unknown。限定范围的 offline 不是永久会话退出。Codex 在准确 thread 信号验证前保持 unknown。这些观测不改变通知，也不证明模型处理。迟到 SessionEnd 与 resume 竞态可能让旧接收门控停在 inactive；需要单独生命周期修复，不能由 presence 静默复位。
+
+## 源码中的实例隔离生命周期
+
+尚未发布的修复在 native-sessions/claude-<session>.json 保存跨房间共享的观测。原生 start / end hook 根据最近的 Claude 祖先进程 PID 与 UTC 启动时间确认实例；嵌套宿主不能借用外层身份。权威绑定与生命周期观测必须一致。start / end、join、修复和 socket 提交共用按 runtime / session 的选房锁，再获取房间通知锁。匹配的 end 在进程退出前关闭该实例；旧实例或无法确认归属的 end 只记录未解决观测，不关闭当前接收器。重复 start / compact / end 保留身份和历史，明确 leave、停用与不确定预留保持原有行为。
+
+新校验的绑定会保存宿主可选的 pidDomain。该范围确认属于本机时，完整 registry 扫描加上旧进程已结束的正面证据，允许在正常退出删除 PID JSON 后报告 offline。缺少范围证据的旧绑定保持 unknown，原因 no_registry_record_namespace_unverified；不能只凭元数据消失判断退出。快照变动在原有总预算内重读一次，区分 registry_snapshot_changed、binding_snapshot_changed 和 registry_record_invalid。
+
+依赖协调后的竞态保护前，须升级所有参与的项目入口与启用的 AgentChat hook。旧程序不遵守该锁，也不理解新观测，混用时不能保证协调保护。Alpha 13 下载包尚不含本修复。本修复不安装 hooks、不修改入站策略、不重放通知，也不代表模型收信通过。
+
+共享实例门控存在后，旧 hook 写 legacy active=false 不会关闭新门控；socket 校验可在进程消失后发现它，但旧 hook 已不能提供协调的退出前停止。源码 start 确认宿主后若无法准备接收器，会记录 reception_unavailable；门控可能仍指向之前的绑定。应检查错误和准确成员修复提示，不把门控当作在线状态。
+
+对端启动 / 退出 / 换房时，并发通知可能返回 held、room_selection_busy、automatic_retry:false。消息已保存且未消耗预留，但不会自动重试，不能把它说成已提交或已处理。显式 read 可以读取；后续符合条件的新通知可能合并这些未预留消息。
 
 ## 可选项目文件集成与移除
 

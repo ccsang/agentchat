@@ -28,26 +28,26 @@ test("already loaded Stop hooks retire immediately without reserving messages or
   expect(store.message(store.read(0).messages[0]!.id).notify_batch_id).toBeNull();
   expect(receiver(f.project, b).state).toBe("inactive");
 });
-test("wrong project and subagent hook contexts are rejected", () => {
-  expect(() => registerHook(f.project, { ...hook("SessionStart"), cwd: "/" }, {})).toThrow();
-  expect(() => registerHook(f.project, { ...hook("SessionStart"), agent_id: "subagent" }, {})).toThrow("Subagent");
+test("wrong project and subagent hook contexts are rejected", async () => {
+  await expect(registerHook(f.project, { ...hook("SessionStart"), cwd: "/" }, {})).rejects.toThrow();
+  await expect(registerHook(f.project, { ...hook("SessionStart"), agent_id: "subagent" }, {})).rejects.toThrow("Subagent");
 });
-test("default SessionStart records context but does not enroll every session", () => {
+test("default SessionStart records context but does not enroll every session", async () => {
   config(); const unknown = nativeIdentity("claude").session;
-  registerHook(f.project, { ...hook("SessionStart"), session_id: unknown }, {});
+  (await registerHook(f.project, { ...hook("SessionStart"), session_id: unknown }, {}));
   expect(store.members()).toHaveLength(2);
 });
-test("malformed managed hook arguments cannot emit the rewake exit status", () => {
+test("malformed managed hook arguments cannot emit the rewake exit status", async () => {
   const result = cli(f.root, ["--agentchat-managed=v1", "hook", "wait", "--unknown"], testEnv());
   expect(result.status).toBe(1); expect(result.data.error.code).toBe("E_USAGE");
 });
-test("Codex accepted receipt records submission only and never sends body", () => {
+test("Codex accepted receipt records submission only and never sends body", async () => {
   fakeCodex("console.log('Queued message accepted123 for thread '+a[a.indexOf('--thread')+1]+'.');");
   store.send({ from: b.id, to: a.id, notify: true, body: "untrusted body" });
   const result = dispatchCodex(store, f.project, a); expect(result.state).toBe("submitted"); expect(result.processed).toBe(false);
   expect(dispatchCodex(store, f.project, a).state).toBe("held");
 });
-test("Codex doctor separates queue capability from a missing reverse nonce proof without sending a notification", () => {
+test("Codex doctor separates queue capability from a missing reverse nonce proof without sending a notification", async () => {
   fakeCodex("console.log('Queued message accepted123 for thread '+a[a.indexOf('--thread')+1]+'.');");
   const before = readFileSync(join(f.project.room, "chat.db"));
   const first = cli(f.root, ["doctor", "--as", a.id]);
@@ -63,21 +63,21 @@ test("Codex doctor separates queue capability from a missing reverse nonce proof
   expect(after.data.reception.reason_code).toBe("no_nonce_proof"); expect(after.data.reception.evidence).toBeNull();
   expect(readFileSync(join(f.root, "attempts"), "utf8")).toBe("accepted\n"); expect(store.member(a.id).read_seq).toBe(0);
 });
-test("Codex doctor reports a missing queue separately from missing nonce proof", () => {
+test("Codex doctor reports a missing queue separately from missing nonce proof", async () => {
   config({ codexBin: join(f.root, "absent") });
   const result = cli(f.root, ["doctor", "--as", a.id]);
   expect(result.data.reception).toMatchObject({ state: "unverified", reason_code: "no_nonce_proof", transport_alive: null,
     transport: { state: "unavailable", scope: "command_capability", exact_session_reachable: null } });
   expect(existsSync(join(f.root, "attempts"))).toBe(false);
 });
-test("Codex cannot inherit another adapter or session's stored nonce proof", () => {
+test("Codex cannot inherit another adapter or session's stored nonce proof", async () => {
   const proof = { nonce: "fixture", replyId: "fixture", verifiedAt: Date.now(), hostVersion: "fixture", adapter: "codex-queue" };
   for (const extra of [{ session: b.session_ref! }, { memberId: b.id }, { proof: { ...proof, adapter: "claude-channel" } }, { proof: { ...proof, nonce: "" } }]) {
     writeJson(sessionPath(f.project, a.session_ref!), { session: a.session_ref!, memberId: a.id, active: true, proof, ...extra });
     expect(receiver(f.project, a)).toMatchObject({ state: "unverified", reason_code: "no_nonce_proof", evidence: null });
   }
 });
-test("post-accept CLI error is unknown and pauses future notifications persistently", () => {
+test("post-accept CLI error is unknown and pauses future notifications persistently", async () => {
   fakeCodex("process.exit(1);"); store.send({ from: b.id, to: a.id, notify: true, body: "first" });
   expect(dispatchCodex(store, f.project, a).state).toBe("unknown"); expect(paused(f.project, a)?.reason).toBe("queue_outcome_unknown");
   store.send({ from: b.id, to: a.id, notify: true, body: "second" });
@@ -85,16 +85,16 @@ test("post-accept CLI error is unknown and pauses future notifications persisten
   resume(f.project, a); expect(paused(f.project, a)).toBeNull();
   expect(store.db.query("SELECT count(*) n FROM messages WHERE notify_batch_id IS NOT NULL").get()).toEqual({ n: 1 });
 });
-test("exit zero without an exact valid receipt is still unknown", () => {
+test("exit zero without an exact valid receipt is still unknown", async () => {
   fakeCodex("console.log('success');"); store.send({ from: b.id, to: a.id, notify: true, body: "first" });
   expect(dispatchCodex(store, f.project, a).state).toBe("unknown");
 });
-test("unavailable CLI does not consume a notification reservation", () => {
+test("unavailable CLI does not consume a notification reservation", async () => {
   config({ codexBin: join(f.root, "absent") }); store.send({ from: b.id, to: a.id, notify: true, body: "first" });
   expect(dispatchCodex(store, f.project, a).state).toBe("unavailable");
   expect(store.db.query("SELECT count(*) n FROM messages WHERE notify_batch_id IS NOT NULL").get()).toEqual({ n: 0 });
 });
-test("timeout after attempting submission is unknown and never automatically retried", () => {
+test("timeout after attempting submission is unknown and never automatically retried", async () => {
   fakeCodex("setInterval(()=>{},1000); await new Promise(()=>{});");
   store.send({ from: b.id, to: a.id, notify: true, body: "first" });
   expect(dispatchCodex(store, f.project, a).state).toBe("unknown"); expect(paused(f.project, a)).not.toBeNull();
@@ -122,7 +122,7 @@ test("a probe queued during a long native turn remains valid; retries preserve t
 test("inactive Claude cannot claim a native probe", async () => {
   config(); await expect(startProbe(store, f.project, b)).rejects.toThrow("supported native socket");
 });
-test("fake binary probes are isolated from user clients", () => {
+test("fake binary probes are isolated from user clients", async () => {
   const path = fakeCodex("process.exit(0)"); expect(inspectCodex(path)?.version).toBe("codex-cli fixture");
   expect(existsSync(join(f.root, "attempts"))).toBe(false);
   expect(testEnv().CODEX_THREAD_ID).toBeUndefined();

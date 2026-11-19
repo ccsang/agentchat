@@ -3,6 +3,7 @@ import { version } from "../package.json";
 import { discoverProject } from "./project.ts";
 import { identify, optionalIdentity } from "./identity.ts";
 import { Store } from "./store.ts";
+import { observePresence } from "./presence.ts";
 import { errorResult, requireThat } from "./errors.ts";
 import { policy, receiver, saveState, state } from "./runtime.ts";
 import { inspectCodex, notifyMember, paused, resume } from "./notify.ts";
@@ -11,12 +12,14 @@ import { endHook, pluginHook, registerHook, waitHook } from "./hooks.ts";
 import type { HookInput } from "./hooks.ts";
 import type { Identity, Member, Project } from "./types.ts";
 import { recordProbeReply, startProbe } from "./probe.ts";
-import { automaticSocket, configureSocket } from "./socket-state.ts";
+import { automaticSocketLocked, configureSocketLocked } from "./socket-state.ts";
 import { createRoom, describeMembers, leaveSelectedRoom, listRooms, memberLeft, rejoinRoom, resolveRoom, roomExists, roomName, selectedRoom, selectRoom, withRoomSelection } from "./rooms.ts";
 import { setupProgram } from "./program.ts";
 import { getSkill, listSkills } from "./skills.ts";
 import { applyClaudeInbound, claudeInboundStatus, INBOUND_CHOICES, planClaudeInbound, previewClaudeInbound } from "./claude-inbound.ts";
 import type { InboundChoice } from "./claude-inbound.ts";
+import { applyMigration, planMigration, previewMigration } from "./migrate.ts";
+import { AGY_TURN, agyHook, observeAgyLocked } from "./agy.ts";
 
 const HELP = `AgentChat ${version}
 Local project chat for coding agents. Output is JSON except help, version and skills get.
@@ -31,12 +34,13 @@ Daily commands (project and native identity are discovered automatically):
   room create NAME                   Create a room without reinstalling the program or project.
   room list | current                Inspect rooms without changing selection.
   room use NAME                      Join/select an existing room for this native session only.
-  members                            List registered members; no inferred online status.
+  members                            List membership, selected room and scoped native presence observations.
   send [--to NAME|ID | --reply-to ID] [--notify] [--id ID] --text TEXT
   send [--to NAME|ID | --reply-to ID] [--notify] [--id ID] --stdin
   read [--new | --after SEQ | --id ID | --mark SEQ] [--limit 20]
 
 Setup / diagnostics:
+  migrate [--apply] [--allow-old-pins] Explicit single-room v1 → v2 migration for agy; preview checks participating pins.
   claude-inbound [accept|hold|refuse|default] [--apply]
                                      Inspect/preview Claude user-level inbound policy; explicit apply backs up settings.
   install [--instructions] [--hooks] [--apply] [--auto-join | --no-auto-join] [--budget N] [--window-seconds N] [--codex-bin PATH]
@@ -61,7 +65,9 @@ async function joinProject(project: Project, identity: Identity, name?: string):
     try {
       const member = store.join(identity, name);
       selectRoom(project, identity);
-      const automatic = member.runtime === "claude" ? automaticSocket(project, member) : undefined;
+      const automatic = member.runtime === "claude" ? automaticSocketLocked(project, member)
+        : member.runtime === "agy" ? { state: "awaiting_invocation", mode: AGY_TURN,
+          observation: observeAgyLocked(project, member.session_ref!, "native_tool"), compact: "untested" } : undefined;
       if (automatic) saveState(project, { ...state(project, member), session: member.session_ref!, active: true, memberId: member.id,
         error: automatic.state === "unavailable" ? { reason: String(automatic.reason), code: automatic.code as string | undefined, at: Date.now() } : undefined });
       return { ok: true, joined: true, project, room: roomName(project), member, members: describeMembers(project, store.members()), initialization, automatic_reception: automatic, reception: receiver(project, member) };
@@ -119,6 +125,7 @@ export async function runCli(args: readonly string[]): Promise<number> {
       after: { type: "string" }, limit: { type: "string" }, mark: { type: "string" }, json: { type: "boolean" },
       apply: { type: "boolean" }, instructions: { type: "boolean" }, hooks: { type: "boolean" }, disable: { type: "boolean" }, "auto-join": { type: "boolean" }, "no-auto-join": { type: "boolean" }, budget: { type: "string" },
       "window-seconds": { type: "string" }, "codex-bin": { type: "string" }, "agentchat-managed": { type: "string" },
+      "allow-old-pins": { type: "boolean" },
     } });
     const command = p[0]; hook = command === "hook";
     requireThat(command !== "channel-config" && command !== "launch" && !(command === "notify" && ["claude-channel", "unavailable"].includes(p[1] ?? "")),
@@ -126,7 +133,11 @@ export async function runCli(args: readonly string[]): Promise<number> {
     if (hook && ["plugin-session-start", "plugin-session-end"].includes(p[1] ?? "")) {
       requireThat(p.length === 2 && Object.keys(v).every(key => key === "agentchat-managed"), "E_USAGE", "Plugin hooks use only native stdin context");
       const input = JSON.parse(await stdin(64 * 1024)) as HookInput;
-      console.log(JSON.stringify(pluginHook(input, p[1] === "plugin-session-start" ? "SessionStart" : "SessionEnd", process.env))); return 0;
+      console.log(JSON.stringify(await pluginHook(input, p[1] === "plugin-session-start" ? "SessionStart" : "SessionEnd", process.env))); return 0;
+    }
+    if (hook && ["agy-session-start", "agy-pre-invocation"].includes(p[1] ?? "")) {
+      requireThat(p.length === 2 && Object.keys(v).length === 0, "E_USAGE", "agy hooks use only native stdin context");
+      console.log(JSON.stringify(await agyHook(JSON.parse(await stdin(64 * 1024)), p[1] === "agy-session-start" ? "SessionStart" : "PreInvocation"))); return 0;
     }
     if (command === "skills") {
       for (const key of Object.keys(v)) requireThat(["project", "json"].includes(key), "E_USAGE", `--${key} is not valid for skills`);
@@ -154,6 +165,7 @@ export async function runCli(args: readonly string[]): Promise<number> {
       join: ["name", "generic"], leave: [], room: [], members: [], send: ["to", "reply-to", "notify", "id", "text", "stdin"],
       read: ["new", "after", "id", "mark", "limit"], install: ["apply", "instructions", "hooks", "auto-join", "no-auto-join", "budget", "window-seconds", "codex-bin"],
       uninstall: ["apply", "instructions", "hooks"], doctor: [], probe: ["to"], notify: ["to"], hook: ["agentchat-managed"], "socket-config": ["apply", "to", "disable"],
+      migrate: ["apply", "allow-old-pins"],
     };
     const allowed = new Set(["project", "room", "as", "json", ...(specific[command ?? ""] ?? [])]);
     for (const key of Object.keys(v)) requireThat(allowed.has(key), "E_USAGE", `--${key} is not valid for ${command}`);
@@ -179,6 +191,11 @@ export async function runCli(args: readonly string[]): Promise<number> {
       else if (p[1] === "list" || p[1] === "current") result = listRooms(base, optionalIdentity());
       else if (p[1] === "use") result = await joinProject(resolveRoom(base, p[2]!, identify()), identify());
       else requireThat(false, "E_USAGE", "Use room create NAME, room list, room current or room use NAME");
+    } else if (command === "migrate") {
+      requireThat(!v.as, "E_USAGE", "Migration targets a room, not a member");
+      requireThat(!v["allow-old-pins"] || v.apply, "E_USAGE", "--allow-old-pins is an explicit apply override");
+      const plan = planMigration(project);
+      result = v.apply ? applyMigration(plan, !!v["allow-old-pins"]) : previewMigration(plan);
     } else if (command === "install" || command === "uninstall") {
       requireThat(!(v["auto-join"] && v["no-auto-join"]), "E_USAGE", "Choose auto-join or no-auto-join");
       const plan = await planInstall(project, { uninstall: command === "uninstall", instructions: v.instructions, hooks: v.hooks, autoJoin: v["no-auto-join"] ? false : v["auto-join"],
@@ -186,8 +203,8 @@ export async function runCli(args: readonly string[]): Promise<number> {
       result = v.apply ? applyInstall(plan) : preview(plan);
     } else if (hook) {
       const input = JSON.parse(await stdin(64 * 1024)) as HookInput;
-      if (p[1] === "session-start") { result = registerHook(project, input, process.env); }
-      else if (p[1] === "session-end") { endHook(project, input); return 0; }
+      if (p[1] === "session-start") { result = await registerHook(project, input, process.env); }
+      else if (p[1] === "session-end") { await endHook(project, input); return 0; }
       else if (p[1] === "wait") {
         const cancel = new AbortController();
         const stop = () => cancel.abort(); process.on("SIGINT", stop); process.on("SIGTERM", stop);
@@ -203,8 +220,11 @@ export async function runCli(args: readonly string[]): Promise<number> {
       if (member?.runtime === "claude") {
         try { claudeInbound = claudeInboundStatus(); } catch (error) { claudeInbound = errorResult(error); }
       }
-      const left = member ? memberLeft(project, member) : false;
-      let reception = member ? receiver(project, member) : null;
+      const described = member ? describeMembers(project, [member])[0]! : null;
+      const presence = member ? observePresence(project, [member]).get(member.id)! : null;
+      let reception = member ? described?.membership === null
+        ? { state: "unavailable", reason_code: "selection_unavailable", verification: "unverified" }
+        : receiver(project, member) : null;
       if (member?.runtime === "codex") {
         let transport: Record<string, unknown>;
         try {
@@ -216,7 +236,11 @@ export async function runCli(args: readonly string[]): Promise<number> {
         } catch { transport = { state: "unknown", scope: "command_capability", exact_session_reachable: null, reason: "Queue capability configuration could not be inspected." }; }
         reception = { ...reception, transport };
       }
-      result = { ok: true, project, identity, joined: !!member && !left, member: member ? { ...member, membership: left ? "left" : "joined" } : null, diagnostic, reception,
+      const endedGate = (reception as { diagnostic?: { cause?: string }; lifecycle?: { instance_gate?: unknown } } | null)?.diagnostic?.cause === "session_ended"
+        && !(reception as { lifecycle?: { instance_gate?: unknown } })?.lifecycle?.instance_gate;
+      result = { ok: true, project, identity, joined: described ? described.membership === null ? null : described.membership === "joined" : false,
+        member: described ? { ...described, presence } : null, presence, diagnostic, reception,
+        ...(endedGate ? { lifecycle_warning: "The legacy inactive receiver gate is not presence evidence. A late SessionEnd after resume can leave a newer receiver inactive; this cause is not established by the flag alone." } : {}),
         ...(claudeInbound ? { claude_inbound: claudeInbound } : {}) };
     } else {
       requireThat(["join", "members", "send", "read", "notify", "probe", "socket-config"].includes(command ?? ""), "E_USAGE", "Unknown command; use --help");
@@ -235,7 +259,10 @@ export async function runCli(args: readonly string[]): Promise<number> {
           if (requireSelf) requireThat(!memberLeft(project, member), "E_NOT_JOINED", "This session left the room; explicitly rejoin before writing or marking messages");
           return member;
         };
-        if (command === "members") result = { ok: true, project, members: describeMembers(project, store.members()) };
+        if (command === "members") {
+          const members = describeMembers(project, store.members()), presence = observePresence(project, members);
+          result = { ok: true, project, members: members.map(member => ({ ...member, presence: presence.get(member.id) })) };
+        }
         else if (command === "send") {
           requireThat((v.text !== undefined) !== !!v.stdin, "E_USAGE", "Provide exactly one of --text or --stdin");
           const sender = actor(true), body = v.stdin ? await stdin(8192) : v.text!;
@@ -268,13 +295,16 @@ export async function runCli(args: readonly string[]): Promise<number> {
         } else if (command === "probe") result = await startProbe(store, project, v.to ? store.member(v.to) : actor());
         else if (command === "socket-config") {
           const member = v.to ? store.member(v.to) : actor();
-          const configured = configureSocket(project, member, !!v.apply, !!v.disable);
-          if (v.apply && !v.disable) {
-            // An explicit repair already validated the exact live peer. It must also
-            // clear SessionEnd's inactive flag for this existing room membership.
-            saveState(project, { ...state(project, member), session: member.session_ref!, memberId: member.id, active: true, error: undefined });
-            result = { ...configured, reception: receiver(project, member) };
-          } else result = configured;
+          const configure = () => {
+            const configured = configureSocketLocked(project, member, !!v.apply, !!v.disable);
+            if (v.apply && !v.disable) {
+              // An explicit repair already validated the exact live peer. It must also
+              // clear SessionEnd's inactive flag for this existing room membership.
+              saveState(project, { ...state(project, member), session: member.session_ref!, memberId: member.id, active: true, error: undefined });
+              return { ...configured, reception: receiver(project, member) };
+            } return configured;
+          };
+          result = v.apply ? await withRoomSelection(project, { runtime: member.runtime, session: member.session_ref }, async () => configure()) : configure();
         }
         else if (command === "notify") {
           const me = v.to ? store.member(v.to) : actor();

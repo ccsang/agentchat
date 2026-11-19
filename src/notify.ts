@@ -57,6 +57,9 @@ export function dispatchCodex(store: Store, project: Project, member: Member): R
   } finally { release(); }
 }
 export async function notifyMember(store: Store, project: Project, member: Member): Promise<Record<string, unknown>> {
+  if (member.runtime === "claude") {
+    const { dispatchSocket } = await import("./socket-adapter.ts"); return dispatchSocket(store, project, member);
+  }
   // Serialize dispatch against this exact session's leave/switch so leave cannot
   // return while a newly validated notification is still being submitted.
   const release = tryRoomSelectionLock(project, { runtime: member.runtime, session: member.session_ref });
@@ -65,8 +68,10 @@ export async function notifyMember(store: Store, project: Project, member: Membe
     if (memberLeft(project, member)) return { state: "held", reason: "member_left", automatic_retry: false };
     if (!memberRoomSelected(project, member)) return { state: "held", reason: "room_not_selected", automatic_retry: false };
     if (member.runtime === "codex") return dispatchCodex(store, project, member);
-    if (member.runtime === "claude") {
-      const { dispatchSocket } = await import("./socket-adapter.ts"); return await dispatchSocket(store, project, member);
+    if (member.runtime === "agy") {
+      const stopped = paused(project, member);
+      if (stopped) return { state: "paused", reason: stopped.reason };
+      return { state: "held", reason: "next_native_invocation", delivery: "turn_based", reservation_consumed: false, processed: false };
     }
     const stopped = paused(project, member);
     if (stopped) return { state: stopped.kind === "host_blocked" ? "blocked" : "paused", reason: stopped.reason };

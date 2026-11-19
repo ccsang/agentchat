@@ -10,6 +10,9 @@ export function pathPresent(path: string): boolean {
 
 export function privateDirectory(path: string): void {
   mkdirSync(path, { recursive: true, mode: 0o700 });
+  existingPrivateDirectory(path);
+}
+export function existingPrivateDirectory(path: string): void {
   const stat = lstatSync(path);
   requireThat(stat.isDirectory() && !stat.isSymbolicLink(), "E_PERMISSIONS", `Not a private directory: ${path}`);
   requireThat(process.getuid === undefined || stat.uid === process.getuid(), "E_PERMISSIONS", `Directory has another owner: ${path}`);

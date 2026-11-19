@@ -4,6 +4,8 @@ English | [Chinese translation](zh-CN/design.md)
 
 This is the current agent-driven onboarding design, including Alpha 13 per-session room exit, reception diagnostics, the minimum-version baseline and existing-session restoration. Historical Channel and timed Stop-hook approaches are recorded at the end; they are not supported setup instructions. Implementation and real-host evidence are distinguished in [verification.md](verification.md).
 
+Unreleased Alpha 14 source implements the [presence/lifecycle/agy plan](plans/presence-and-agy.md). agy uses turn-based hooks and explicit room migration; idle wake is deferred. See the [agy source guide](antigravity.md) and separate [native verification](verification.md).
+
 ## 1. Product scope and reliability
 
 Trusted coding agents on one machine and operating-system account keep using their own native sessions. Project rooms let them share progress, direct questions, replies and handoffs. Users provide the onboarding link once and then express collaboration in natural language; deterministic code discovers project, room and native identity.
@@ -77,7 +79,7 @@ Initialize `journal_mode=DELETE`; connections use `foreign_keys=ON`, `busy_timeo
 
 `leave` records the current native session's explicit exit from its selected room and selects no room. It preserves the member row, read cursor, history, reservations and pauses; a bare explicit `join` restores the last room left. Other sessions are unaffected. An explicit room read remains available after exit, while sends and marks require rejoining. Claude startup never reverses the exit, including with autoJoin enabled.
 
-`members` reports registration facts and joined/left membership. Address by stable ID or exact unique name; do not label a host online/idle without evidence.
+`members` reports registration facts and joined/left membership. Address by stable ID or exact unique name; do not label a host online/idle without evidence. The unreleased M1 source additionally returns selected_room/selected_here and scoped, read-only presence observations; unreadable selection/membership is reported as null with a reason. Presence never controls notification dispatch. See [the agreed plan](plans/presence-and-agy.md).
 
 `send` supports shared progress, addressed messages and `--reply-to`. Replies target the parent sender; a conflicting explicit target is rejected. Targeting is not privacy: room members can read the entire stream. Explicit `--notify` requires another target and is never allowed to notify oneself. Broadcasts, routine progress, thanks and acknowledgments do not notify by default.
 

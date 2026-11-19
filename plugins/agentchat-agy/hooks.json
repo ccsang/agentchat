@@ -1,0 +1,7 @@
+{
+  "agentchat": {
+    "enabled": true,
+    "SessionStart": [{ "type": "command", "command": "sh ./scripts/hook.sh session-start", "timeout": 10 }],
+    "PreInvocation": [{ "type": "command", "command": "sh ./scripts/hook.sh pre-invocation", "timeout": 10 }]
+  }
+}

@@ -16,75 +16,75 @@ let f: ReturnType<typeof fixture>, host: ReturnType<typeof fixture>;
 beforeEach(() => { f = fixture(); host = fixture(); }); afterEach(() => { f.cleanup(); host.cleanup(); });
 function input(event = "SessionStart", session = randomUUID()) { return { hook_event_name: event, session_id: session, cwd: f.root }; }
 const envFor = () => testEnv({ CLAUDE_CONFIG_DIR: join(host.root, "claude") });
-test("plugin startup persists real hook identity without initializing an unjoined project", () => {
+test("plugin startup persists real hook identity without initializing an unjoined project", async () => {
   const path = join(host.root, "env"); writeFileSync(path, "export USER_RULE='keep'", { mode: 0o600 });
   const context = input(), env = { ...envFor(), CLAUDE_ENV_FILE: path };
-  expect(pluginHook(context, "SessionStart", env)).toEqual({}); pluginHook(context, "SessionStart", env);
+  expect((await pluginHook(context, "SessionStart", env))).toEqual({}); (await pluginHook(context, "SessionStart", env));
   expect(readFileSync(path, "utf8")).toBe(`export USER_RULE='keep'\nexport AGENTCHAT_CLAUDE_SESSION_ID='${context.session_id}'\n`);
   expect(readdirSync(f.root)).toEqual([]);
 });
-test("startup, resume and compact create a missing host environment file without duplicating identity", () => {
+test("startup, resume and compact create a missing host environment file without duplicating identity", async () => {
   for (const source of ["startup", "resume", "compact"]) {
     const path = join(host.root, `${source}-env.sh`), context = { ...input(), source };
     const env = { ...envFor(), CLAUDE_ENV_FILE: path };
     expect(existsSync(path)).toBe(false);
-    expect(pluginHook(context, "SessionStart", env)).toEqual({});
+    expect((await pluginHook(context, "SessionStart", env))).toEqual({});
     const expected = `export AGENTCHAT_CLAUDE_SESSION_ID='${context.session_id}'\n`;
     expect(readFileSync(path, "utf8")).toBe(expected);
     expect(statSync(path).mode & 0o777).toBe(0o600);
-    pluginHook(context, "SessionStart", env);
+    (await pluginHook(context, "SessionStart", env));
     expect(readFileSync(path, "utf8")).toBe(expected);
   }
   expect(readdirSync(f.root)).toEqual([]);
 });
-test("host environment writes reject links and missing parent directories", () => {
+test("host environment writes reject links and missing parent directories", async () => {
   const target = join(host.root, "user-file"); writeFileSync(target, "preserve\n", { mode: 0o600 });
   for (const [name, destination] of [["live", target], ["dangling", join(host.root, "absent")]] as const) {
     const path = join(host.root, name); symlinkSync(destination, path);
-    expect(() => pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: path })).toThrow();
+    await expect(pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: path })).rejects.toThrow();
   }
   expect(readFileSync(target, "utf8")).toBe("preserve\n");
   expect(existsSync(join(host.root, "absent"))).toBe(false);
   const missing = join(host.root, "missing-parent");
-  expect(() => pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: join(missing, "env") })).toThrow();
+  await expect(pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: join(missing, "env") })).rejects.toThrow();
   expect(existsSync(missing)).toBe(false);
   expect(readdirSync(f.root)).toEqual([]);
 });
-test("host environment writes reject relative paths and non-regular leaves without blocking", () => {
-  expect(() => pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: "relative-env.sh" })).toThrow("must be absolute");
+test("host environment writes reject relative paths and non-regular leaves without blocking", async () => {
+  await expect(pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: "relative-env.sh" })).rejects.toThrow("must be absolute");
   const directory = join(host.root, "directory"); mkdirSync(directory);
-  expect(() => pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: directory })).toThrow();
+  await expect(pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: directory })).rejects.toThrow();
   const fifo = join(host.root, "fifo");
   expect(spawnSync("mkfifo", [fifo], { encoding: "utf8" }).status).toBe(0);
-  expect(() => pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: fifo })).toThrow("must be regular");
+  await expect(pluginHook(input(), "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: fifo })).rejects.toThrow("must be regular");
   expect(readdirSync(directory)).toEqual([]); expect(readdirSync(f.root)).toEqual([]);
 });
 test("plugin lifecycle auto-enrolls only initialized projects without requiring project hooks", async () => {
   applyInstall(await planInstall(f.project, { autoJoin: true }));
-  const context = { ...input(), agent_type: "custom-primary" }; pluginHook(context, "SessionStart", envFor());
+  const context = { ...input(), agent_type: "custom-primary" }; (await pluginHook(context, "SessionStart", envFor()));
   const store = new Store(f.project.room);
   try {
     const member = store.actor({ runtime: "claude", session: context.session_id });
-    expect(state(f.project, member)?.active).toBe(true); expect(receiver(f.project, member).mode).toBe("claude-socket-experimental");
-    pluginHook({ ...context, hook_event_name: "SessionEnd" }, "SessionEnd", envFor());
+    expect(state(f.project, member)?.active).toBe(false); expect(receiver(f.project, member).mode).toBe("claude-socket-experimental");
+    (await pluginHook({ ...context, hook_event_name: "SessionEnd" }, "SessionEnd", envFor()));
     expect(state(f.project, member)?.active).toBe(false);
   } finally { store.close(); }
   expect(existsSync(join(f.root, ".claude"))).toBe(false); expect(existsSync(join(f.root, "AGENTS.md"))).toBe(false);
 });
 test("auto-join opt-out and uninstall stop plugin enrollment", async () => {
-  applyInstall(await planInstall(f.project, { autoJoin: false })); pluginHook(input(), "SessionStart", envFor());
+  applyInstall(await planInstall(f.project, { autoJoin: false })); (await pluginHook(input(), "SessionStart", envFor()));
   expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
   applyInstall(await planInstall(f.project, { uninstall: true }));
-  expect(pluginHook(input(), "SessionStart", envFor())).toEqual({}); expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
+  expect((await pluginHook(input(), "SessionStart", envFor()))).toEqual({}); expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
 });
 test("a Claude session that left is not restored by SessionStart even when auto-join is enabled", async () => {
   applyInstall(await planInstall(f.project, { autoJoin: true }));
-  const context = input(), env = envFor(); pluginHook(context, "SessionStart", env);
+  const context = input(), env = envFor(); (await pluginHook(context, "SessionStart", env));
   const store = new Store(f.project.room), identity = { runtime: "claude" as const, session: context.session_id };
   try {
     const member = store.actor(identity), native = testEnv({ AGENTCHAT_CLAUDE_SESSION_ID: context.session_id });
     expect(cli(f.root, ["leave"], native).data.left).toBe(true);
-    const result = pluginHook(context, "SessionStart", env);
+    const result = (await pluginHook(context, "SessionStart", env));
     expect((result.hookSpecificOutput as { additionalContext: string }).additionalContext).toContain('"state":"left"');
     expect(cli(f.root, ["room", "current"], native).data.current).toBeNull();
     expect(store.members()).toHaveLength(1); expect(store.actor(identity).id).toBe(member.id);
@@ -100,7 +100,7 @@ test("auto-join off never enrolls a new UUID in an existing selected room or tak
     const existing = store.join({ runtime: "claude", session: randomUUID() }, generatedName);
     selectRoom(project, { runtime: "claude", session: context.session_id });
     const before = readFileSync(join(project.room, "chat.db"));
-    const result = pluginHook(context, "SessionStart", envFor());
+    const result = (await pluginHook(context, "SessionStart", envFor()));
     expect(JSON.stringify(result)).toContain("auto_join_disabled"); expect(store.members()).toEqual([existing]);
     expect(readFileSync(join(project.room, "chat.db"))).toEqual(before);
     expect(state(project, existing)).toBeNull(); expect(existsSync(join(f.project.room, "chat.db"))).toBe(false);
@@ -116,7 +116,7 @@ test("an existing shared-room identity cannot resume from an uninitialized workt
     saveState(selected, { session, memberId: member.id, active: false });
     const linked = join(f.root, "linked"); git(f.root, ["worktree", "add", "-b", "linked", linked]);
     const other = discoverProject(linked);
-    expect(pluginHook({ session_id: session, cwd: linked, hook_event_name: "SessionStart" }, "SessionStart", envFor())).toEqual({});
+    expect((await pluginHook({ session_id: session, cwd: linked, hook_event_name: "SessionStart" }, "SessionStart", envFor()))).toEqual({});
     expect(existsSync(join(workspaceDir(other), "installed.json"))).toBe(false); expect(state(selected, member)?.active).toBe(false);
   } finally { store.close(); }
 });
@@ -126,21 +126,21 @@ test("startup displays inbound user policy without changing it or overriding hol
   const path = join(directory, "settings.json");
   for (const choice of ["accept", "hold", "refuse"]) {
     const before = JSON.stringify({ crossSessionInbound: choice, model: "keep" }); writeFileSync(path, before, { mode: 0o600 });
-    const result = pluginHook(input(), "SessionStart", env);
+    const result = (await pluginHook(input(), "SessionStart", env));
     expect(result.systemMessage).toContain(choice === "accept" ? "accept peer messages automatically" : `${choice} peer messages`);
     expect(JSON.stringify(result)).toContain("effective native policy is unverified");
     expect(readFileSync(path, "utf8")).toBe(before);
   }
   writeFileSync(path, "{}");
-  expect(pluginHook(input(), "SessionStart", env).systemMessage).toContain("may need your approval");
+  expect((await pluginHook(input(), "SessionStart", env)).systemMessage).toContain("may need your approval");
   expect(readFileSync(path, "utf8")).toBe("{}");
 });
-test("subagent startup never leaks identity to the primary shell or creates project state", () => {
+test("subagent startup never leaks identity to the primary shell or creates project state", async () => {
   const path = join(host.root, "env"); writeFileSync(path, "", { mode: 0o600 });
-  expect(pluginHook({ ...input(), agent_id: "child", agent_type: "custom-primary" }, "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: path })).toEqual({});
+  expect((await pluginHook({ ...input(), agent_id: "child", agent_type: "custom-primary" }, "SessionStart", { ...envFor(), CLAUDE_ENV_FILE: path }))).toEqual({});
   expect(readFileSync(path, "utf8")).toBe(""); expect(readdirSync(f.root)).toEqual([]);
 });
-test("plugin wrapper forwards stdin with spaces and apostrophes and needs no external runtime", () => {
+test("plugin wrapper forwards stdin with spaces and apostrophes and needs no external runtime", async () => {
   const directory = join(host.root, "bin with space's"); mkdirSync(directory);
   const capture = join(host.root, "capture");
   writeFileSync(join(directory, "agentchat"), '#!/bin/sh\nprintf "%s\\n" "$*" > "$CAPTURE"\ncat >> "$CAPTURE"\n', { mode: 0o700 });
@@ -149,7 +149,7 @@ test("plugin wrapper forwards stdin with spaces and apostrophes and needs no ext
     { input: payload, encoding: "utf8", env: { ...envFor(), PATH: "/usr/bin:/bin", HOME: host.root, AGENTCHAT_BIN_DIR: directory, CAPTURE: capture } });
   expect(r.status).toBe(0); expect(readFileSync(capture, "utf8")).toBe(`hook plugin-session-start\n${payload}`);
 });
-test("missing CLI is silent and plugin context follows native cwd rather than startup root", () => {
+test("missing CLI is silent and plugin context follows native cwd rather than startup root", async () => {
   const context = input();
   const r = spawnSync("/bin/sh", [join(import.meta.dir, "../plugins/agentchat/scripts/hook.sh"), "session-start"],
     { input: JSON.stringify(context), encoding: "utf8", env: { PATH: "/usr/bin:/bin", HOME: host.root } });
@@ -158,12 +158,12 @@ test("missing CLI is silent and plugin context follows native cwd rather than st
     { cwd: host.root, env: envFor(), input: JSON.stringify(context), encoding: "utf8" });
   expect(cli.status).toBe(0); expect(JSON.parse(cli.stdout)).toEqual({}); expect(readdirSync(f.root)).toEqual([]);
 });
-test("plugin hooks stay silent outside any eligible project but still report malformed input", () => {
-  for (const event of ["SessionStart", "SessionEnd"] as const) expect(pluginHook({ ...input(event), cwd: "/" }, event, envFor())).toEqual({});
+test("plugin hooks stay silent outside any eligible project but still report malformed input", async () => {
+  for (const event of ["SessionStart", "SessionEnd"] as const) expect((await pluginHook({ ...input(event), cwd: "/" }, event, envFor()))).toEqual({});
   const cli = spawnSync(process.execPath, [join(import.meta.dir, "../bin/agentchat"), "hook", "plugin-session-start"],
     { cwd: "/", env: envFor(), input: JSON.stringify({ ...input(), cwd: "/" }), encoding: "utf8" });
   expect(cli.status).toBe(0); expect(JSON.parse(cli.stdout)).toEqual({}); expect(cli.stderr).toBe("");
-  expect(() => pluginHook({ ...input("SessionEnd"), cwd: "/" }, "SessionStart", envFor())).toThrow();
+  await expect(pluginHook({ ...input("SessionEnd"), cwd: "/" }, "SessionStart", envFor())).rejects.toThrow();
 });
 test("plugin hooks report Git discovery failures in an initialized project instead of staying silent", async () => {
   git(f.root, ["init", "-b", "main"]);

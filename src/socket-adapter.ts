@@ -8,12 +8,18 @@ import { privateDirectory } from "./files.ts";
 import { notice } from "./notify.ts";
 import type { Member, Project } from "./types.ts";
 import type { Store } from "./store.ts";
-import { memberLeft, memberRoomSelected } from "./rooms.ts";
+import { memberLeft, memberRoomSelected, tryRoomSelectionLock } from "./rooms.ts";
 import { lifecycleStatus, peerFailure, socketRecovery } from "./reception-diagnostics.ts";
+import { nativeEnded } from "./lifecycle.ts";
+import { requireThat } from "./errors.ts";
 
 export async function dispatchSocket(store: Store, project: Project, member: Member): Promise<Record<string, unknown>> {
+  const release = tryRoomSelectionLock(project, { runtime: member.runtime, session: member.session_ref });
+  if (!release) return { state: "held", reason: "room_selection_busy", automatic_retry: false };
+  try { return await dispatchSocketLocked(store, project, member); } finally { release(); }
+}
+async function dispatchSocketLocked(store: Store, project: Project, member: Member): Promise<Record<string, unknown>> {
   if (memberLeft(project, member)) return { state: "held", reason: "member_left", automatic_retry: false };
-  if (state(project, member)?.active === false) return { state: "unavailable", reason: "native_session_ended" };
   if (socketDisabled(project, member)) return { state: "unavailable", reason: "Native socket reception was explicitly disabled" };
   if (!memberRoomSelected(project, member)) return { state: "held", reason: "room_not_selected", automatic_retry: false };
   privateDirectory(join(project.room, "notifications"));
@@ -28,12 +34,13 @@ export async function dispatchSocket(store: Store, project: Project, member: Mem
     if (!binding?.enabled) return { state: "unavailable", reason: "No supported native socket is bound; run join and doctor" };
     let stage: "validation" | "connection" = "validation";
     try {
+      requireThat(!nativeEnded(project, binding, state(project, member)?.active), "E_RECEIVER", "The native session ended");
       validatePeer(project, member, binding); stage = "connection";
       connection = await connectPeer(binding); stage = "validation";
       validatePeer(project, member, binding);
     } catch (error) {
       const failure = peerFailure(error, stage);
-      return { state: "unavailable", reason: failure.reason, code: failure.code,
+      return { state: "unavailable", reason: failure.code === "E_RECEIVER" ? "native_session_ended" : failure.reason, code: failure.code,
         diagnostic: { stage: failure.stage, cause: failure.cause }, reservation_consumed: false,
         ...(failure.rebind ? { recovery: socketRecovery(project, member) } : {}),
         ...(failure.stale ? { lifecycle: lifecycleStatus(project, state(project, member)?.lifecycle, true) } : {}) };

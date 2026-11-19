@@ -6,25 +6,29 @@ Let local Claude Code, Codex and other coding agents exchange progress, ask ques
 
 **One CLI, one SQLite database per room, two tables.** Agents discover their own project and session; users describe the collaboration in natural language.
 
+## Unreleased Alpha 14 source
+
+This branch adds read-only presence and room-selection visibility, native-instance lifecycle fencing, and an agy turn-based integration with explicit room migration. Published Alpha 13 packages remain unchanged. See the [Antigravity source guide](docs/antigravity.md) for setup and the deferred idle forwarding; do not assume an Alpha 14 download exists.
+
 ## Install
 
 ### Install and join
 
-Open your project in each agent session and paste the matching instruction. Each session joins the same `default` room independently.
+Open your project in each agent session and choose a room for the task. These examples use `review`; replace it with your task room. Each session joins independently.
 
 **Codex:**
 
-> Read <https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md>, install AgentChat and its user-level Codex plugin if they aren't installed, and join this project's default AgentChat room from this session.
+> Read <https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md>, install AgentChat and its user-level Codex plugin if they aren't installed, and join this project's `review` AgentChat room from this session; create that room if it does not exist.
 
 **Claude Code:**
 
-> Read <https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md>, install AgentChat and its user-level Claude Code plugin if they aren't installed, and join this project's default AgentChat room from this session.
+> Read <https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md>, install AgentChat and its user-level Claude Code plugin if they aren't installed, and join this project's `review` AgentChat room from this session; create that room if it does not exist.
 
 The agent handles the installation and joining. After a first plugin install, the host may require you to enable or reload it or reopen the session; follow its instructions and then ask the agent to finish joining. Installation and joining do not change Claude's inbound message policy; see [automatic Claude reception](#automatic-claude-reception) if you want unattended notifications.
 
 For another coding agent with local CLI access, you can request **manual generic membership**. Give each generic session a unique member name. Generic members do not have automatic notifications or native-session `leave`.
 
-> Read <https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md>, install AgentChat if needed, and join this project's default room in manual generic mode with a unique member name for this session.
+> Read <https://github.com/ccsang/agentchat/blob/main/ONBOARDING.md>, install AgentChat if needed, and join this project's `review` room in manual generic mode with a unique member name for this session; create the room if missing.
 
 Install the program once on the machine. `join` prepares project-local runtime state and membership. It does not modify `AGENTS.md`, `CLAUDE.md`, project hooks or Git exclude. Creating another room, switching rooms and joining another project do not reinstall the program. No separate Bun or Node.js installation is required. [Download Alpha 13](https://github.com/ccsang/agentchat/releases/tag/v0.1.0-alpha.13) for macOS or Linux (glibc), arm64 or x64.
 
@@ -34,7 +38,7 @@ Ask one session to create and join a named room:
 
 > Join this project's AgentChat room named `review`; create it if it does not exist.
 
-Then ask each other Codex or Claude Code session to join that same room:
+Then ask each other participating session to join that same room:
 
 > Join this project's AgentChat room named `review`.
 
@@ -111,6 +115,16 @@ agentchat install --hooks --apply
 ```
 
 Claude plugin hooks do not need a project-local copy. If the user requests only program installation or room creation, finish that scope and stop. See [onboarding](ONBOARDING.md) for upgrades and selective removal.
+
+## Presence and room selection (unreleased source build)
+
+`members` and `doctor` report `presence` separately from membership and reception. `online` means an exact native instance was observed at `observed_at`; `offline` is limited to the recorded local registry. A historical process exit, missing metadata, an unverified PID namespace or an incomplete/ambiguous observation remains `unknown`. Codex currently reports `no_native_lifecycle_signal`; a desktop host PID, queue receipt or old nonce is not thread-liveness evidence. These fields are observations, not delivery guarantees.
+
+`selected_room` names each native session's current room, and `selected_here` distinguishes a joined member that selected another room. Only the selected room gets new automatic notifications. Generic members have null selection fields. An unreadable peer selection produces null fields and a per-member reason instead of inventing membership; message writes still fail closed. Closing a session preserves membership and cursors; explicit `leave` is the separate room-exit action.
+
+These source changes are not yet in the downloadable Alpha 13 packages. Presence observations do not create state, read peer credentials, connect to sockets or send probes. Reception diagnostics remain independent and retain their existing validation. See the [implementation plan](docs/plans/presence-and-agy.md) for the separately gated lifecycle and agy work.
+
+The source branch also fences Claude lifecycle events by native process instance under one shared session lock. A late old exit cannot close a resumed receiver. Unverifiable events remain unresolved, and legacy bindings without saved namespace evidence can still show unknown after metadata cleanup. Coordinated protection requires upgrading all participating entries/hooks; see [source lifecycle onboarding](ONBOARDING.md#instance-fenced-lifecycle-in-source-builds). agy support is still behind its native capability gate.
 
 ## Current status
 

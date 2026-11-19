@@ -1,7 +1,7 @@
 import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_POLICY } from "./types.ts";
-import type { Member, Policy, Project } from "./types.ts";
+import type { Member, Policy, Project, Runtime } from "./types.ts";
 import { readJson, regularFile, writeJson } from "./files.ts";
 import { requireThat } from "./errors.ts";
 import { Store } from "./store.ts";
@@ -13,9 +13,13 @@ import { legacyMember, memberLeft, memberRoomSelected, resolveRoom, roomName } f
 import { sessionId } from "./identity.ts";
 import { lifecycleStatus, peerFailure, receptionCommand, socketRecovery } from "./reception-diagnostics.ts";
 import type { LifecycleObservation } from "./reception-diagnostics.ts";
+import { nativeEnded, nativeLifecycle } from "./lifecycle.ts";
+import { agyMode, agyReceiver } from "./agy.ts";
 
 export interface SessionState {
   session: string; active: boolean; memberId?: string;
+  runtime?: "agy";
+  injection?: { adapter: "agy-turn-based"; batchId: string; instance: string; reservedAt: number; messageIds: string[] };
   listener?: { pid: number; token: string; expiresAt: number; mode: "hook" | "channel"; launchId?: string;
     startedAt?: number; routingVersion?: number; retry?: { reason: string; retryAt: number } };
   proof?: { nonce: string; replyId: string; verifiedAt: number; hostVersion: string; adapter: string; receiverToken?: string; launchId?: string };
@@ -30,25 +34,27 @@ export function policy(project: Project): Policy {
   requireThat(saved.codexBin === undefined || (typeof saved.codexBin === "string" && saved.codexBin.startsWith("/")), "E_CONFIG", "codexBin must be an absolute executable path");
   return { budget: saved.budget, windowSeconds: saved.windowSeconds, autoJoin: saved.autoJoin, ...(saved.codexBin ? { codexBin: saved.codexBin } : {}) };
 }
-export function sessionPath(project: Project, session: string): string {
+export function sessionPath(project: Project, session: string, runtime?: Runtime): string {
   requireThat(/^[0-9a-f-]{36}$/.test(session), "E_IDENTITY", "Invalid native session identifier");
-  return join(project.room, "sessions", `${session}.json`);
+  return join(project.room, "sessions", `${runtime === "agy" ? "agy-" : ""}${session}.json`);
 }
 export function state(project: Project, member: Member): SessionState | null {
   if (!member.session_ref) return null;
-  return readJson<SessionState>(sessionPath(project, member.session_ref));
+  return readJson<SessionState>(sessionPath(project, member.session_ref, member.runtime));
 }
-export function saveState(project: Project, value: SessionState): void { writeJson(sessionPath(project, value.session), value); }
+export function saveState(project: Project, value: SessionState): void { writeJson(sessionPath(project, value.session, value.runtime), value); }
 export function listenerLock(project: Project, member: Member): string {
   requireThat(/^m_[0-9a-f-]{36}$/.test(member.id), "E_MEMBER", "Invalid member identifier");
   return join(project.room, "listeners", `${member.id}.lock`);
 }
 export function receiver(project: Project, member: Member, now = Date.now()): Record<string, unknown> {
   if (member.runtime === "generic") return { mode: "manual", state: "manual", reason: "No native wake adapter" };
-  if (memberLeft(project, member)) return { mode: member.runtime === "codex" ? "codex-queue" : SOCKET_ADAPTER,
+  const mode = member.runtime === "codex" ? "codex-queue" : member.runtime === "agy" ? agyMode(project, member.session_ref!) : SOCKET_ADAPTER;
+  if (memberLeft(project, member)) return { mode,
     state: "left", transport_alive: false, verification: "unverified", manual_read_available: true, reason: "This session left the room; explicitly rejoin to participate again." };
-  if (!memberRoomSelected(project, member)) return { mode: member.runtime === "codex" ? "codex-queue" : SOCKET_ADAPTER,
+  if (!memberRoomSelected(project, member)) return { mode,
     state: "room_not_selected", transport_alive: false, verification: "unverified", manual_read_available: true, reason: "This native session selected another room; messages remain readable" };
+  if (member.runtime === "agy") return agyReceiver(project, member);
   const value = state(project, member);
   if (member.runtime === "codex") {
     const proof = value?.proof, verified = !!proof && proof.adapter === "codex-queue" && value?.session === member.session_ref && value.memberId === member.id
@@ -66,7 +72,7 @@ export function receiver(project: Project, member: Member, now = Date.now()): Re
   if (native?.enabled && !disabled) {
     try {
       requireThat(!uninstalled(project), "E_CONFIG", "Project integration was uninstalled");
-      requireThat(value?.active !== false, "E_RECEIVER", "The native session ended");
+      requireThat(!nativeEnded(project, native, value?.active), "E_RECEIVER", "The native session ended");
       validatePeer(project, member, native); alive = true; failure = undefined;
     } catch (error) { failure = peerFailure(error, "validation"); }
   }
@@ -87,7 +93,8 @@ export function receiver(project: Project, member: Member, now = Date.now()): Re
     reason: stopped?.reason ?? (!alive ? disabled ? "Native socket reception was explicitly disabled" : failure?.reason ?? "Run join to bind this session's supported native socket; Channel is retired" : degraded ? "Database temporarily unavailable" : limitReason !== "ready" ? limitReason : verified ? "This exact native receiver returned its nonce" : "Native inbox is present; model processing still requires a nonce reply"),
     ...(failure && !disabled ? { diagnostic: { code: failure.code, stage: failure.stage, cause: failure.cause },
       ...(failure.rebind ? { recovery: socketRecovery(project, member) } : {}) } : {}),
-    lifecycle: lifecycleStatus(project, value?.lifecycle, !disabled && !!failure?.stale),
+    lifecycle: { ...lifecycleStatus(project, value?.lifecycle, !disabled && !!failure?.stale),
+      instance_gate: nativeLifecycle(project, member.session_ref!) },
     limits, evidence: verified && alive ? proof : null, historical_evidence: value?.proof ?? null };
 }
 function pausePath(project: Project, member: Member, adapter?: string): string {

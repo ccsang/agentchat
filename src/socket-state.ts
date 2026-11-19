@@ -6,9 +6,11 @@ import { requireThat } from "./errors.ts";
 import type { Member, Project } from "./types.ts";
 import { integrationDir } from "./project.ts";
 import { sessionId } from "./identity.ts";
-import { legacyMember } from "./rooms.ts";
+import { legacyMember, tryRoomSelectionLock } from "./rooms.ts";
 import { pause, paused } from "./runtime.ts";
 import { peerFailure } from "./reception-diagnostics.ts";
+import { activateNative, sameNativeInstance } from "./lifecycle.ts";
+import type { NativeInstance } from "./lifecycle.ts";
 
 function memberId(member: Member): string {
   requireThat(/^m_[0-9a-f-]{36}$/.test(member.id), "E_MEMBER", "Invalid member identifier"); return member.id;
@@ -28,12 +30,16 @@ export function socketDisabled(project: Project, member: Member): boolean {
 }
 export function socketBinding(project: Project, member: Member): PeerBinding | null {
   if (member.runtime !== "claude" || !member.session_ref) return null;
-  const shared = readJson<PeerBinding>(sessionBindingPath(project, member));
-  if (shared) { requireThat(shared.session === member.session_ref, "E_IDENTITY", "Socket binding belongs to another native session"); return shared; }
+  const shared = socketSessionBinding(project, member.session_ref);
+  if (shared) return shared;
   const local = readJson<PeerBinding>(bindingPath(project, member));
   if (local) return local;
   const old = legacyMember(project, member);
   return old ? readJson(join(integrationDir(project), "socket-bindings", `${memberId(old)}.json`)) : null;
+}
+export function socketSessionBinding(project: Project, session: string): PeerBinding | null {
+  const value = readJson<PeerBinding>(join(integrationDir(project), "socket-sessions", `${sessionId(session)}.json`));
+  requireThat(!value || value.session === session, "E_IDENTITY", "Socket binding belongs to another native session"); return value;
 }
 export interface SocketProof { nonce: string; replyId: string; verifiedAt: number; hostVersion: string; adapter: string; receiverToken: string }
 function proofPath(project: Project, member: Member, instance: string): string {
@@ -47,22 +53,33 @@ export function retireChannel(project: Project, member: Member): void {
     pause(project, member, "channel_retired", { adapter: "claude-channel" });
 }
 export function automaticSocket(project: Project, member: Member, env: NodeJS.ProcessEnv = process.env, sessionStart = false): Record<string, unknown> {
+  const release = tryRoomSelectionLock(project, { runtime: member.runtime, session: member.session_ref });
+  requireThat(release, "E_BUSY", "This native session is changing selection or reception");
+  try { return automaticSocketLocked(project, member, env, sessionStart); } finally { release(); }
+}
+export function automaticSocketLocked(project: Project, member: Member, env: NodeJS.ProcessEnv = process.env, sessionStart = false, owner?: NativeInstance | null): Record<string, unknown> {
   retireChannel(project, member);
   const previous = socketBinding(project, member);
   if (socketDisabled(project, member) || previous && !previous.enabled) return { enabled: false, state: "disabled", reason: "Native socket reception was explicitly disabled" };
   try {
+    requireThat(!sessionStart || owner, "E_HOOK_PROVENANCE", "Native SessionStart process provenance could not be established");
+    const current = discoverPeer(project, member, env);
+    requireThat(!sessionStart || sameNativeInstance(current, owner!), "E_HOOK_PROVENANCE", "SessionStart belongs to a different native instance");
     if (previous) {
-      try { validatePeer(project, member, previous); return { enabled: true, configured: false }; }
-      catch (error) {
-        if (!sessionStart) throw error;
-        const current = discoverPeer(project, member, env);
-        requireThat(current.pid === process.ppid, "E_PEER_REBIND", "Changed native process requires its own SessionStart hook or explicit socket-config rebind");
-      }
+      try { validatePeer(project, member, previous); }
+      catch (error) { if (!sessionStart) throw error; }
     }
-    return { ...configureSocket(project, member, true, false, env), enabled: true, configured: true };
+    const configured = !previous || previous.instance !== current.instance;
+    return { ...applyBinding(project, member, current, true, sessionStart ? "native_hook" : "validated_binding"), enabled: true, configured };
   } catch (error) { const failure = peerFailure(error, "validation"); return { enabled: false, state: "unavailable", reason: failure.reason, code: failure.code }; }
 }
 export function configureSocket(project: Project, member: Member, apply: boolean, disable = false, env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+  if (!apply) return configureSocketLocked(project, member, false, disable, env);
+  const release = tryRoomSelectionLock(project, { runtime: member.runtime, session: member.session_ref });
+  requireThat(release, "E_BUSY", "This native session is changing selection or reception");
+  try { return configureSocketLocked(project, member, true, disable, env); } finally { release(); }
+}
+export function configureSocketLocked(project: Project, member: Member, apply: boolean, disable = false, env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
   requireThat(member.runtime === "claude", "E_IDENTITY", "Native socket experiments require an exact registered Claude member");
   const previous = socketBinding(project, member);
   if (disable) {
@@ -73,6 +90,10 @@ export function configureSocket(project: Project, member: Member, apply: boolean
     return { ok: true, experimental: true, applied: apply, enabled: false, member_id: member.id, history_preserved: true, fallback_started: false };
   }
   const binding = discoverPeer(project, member, env);
+  return applyBinding(project, member, binding, apply, "validated_binding");
+}
+function applyBinding(project: Project, member: Member, binding: PeerBinding, apply: boolean, source: "native_hook" | "validated_binding"): Record<string, unknown> {
+  const previous = socketBinding(project, member);
   if (previous?.instance === binding.instance) binding.configuredAt = previous.configuredAt;
   const pausePath = join(project.room, "notifications", `${memberId(member)}.paused.json`);
   const stopped = paused(project, member, "claude-channel");
@@ -83,6 +104,7 @@ export function configureSocket(project: Project, member: Member, apply: boolean
     writeJson(bindingPath(project, member), binding);
     writeJson(sessionBindingPath(project, member), binding);
     if (socketDisabled(project, member)) writeJson(optOutPath(project, member), { session: member.session_ref, disabled: false });
+    activateNative(project, binding, source);
   }
   return { ok: true, applied: apply, experimental: true, member_id: member.id, binding,
     reception_verified: false, old_reservations_preserved: true,

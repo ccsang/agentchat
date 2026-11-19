@@ -9,6 +9,9 @@ import { paused, policy, saveState, state } from "./runtime.ts";
 import { canonicalSocketPath, SOCKET_ADAPTER, validatePeer } from "./claude-peer.ts";
 import { saveSocketProof, socketBinding } from "./socket-state.ts";
 import { memberLeft, memberRoomSelected } from "./rooms.ts";
+import { AGY_TURN, agyMode, agyObservation } from "./agy.ts";
+import { nearestHost } from "./host-context.ts";
+import { processAncestors } from "./lifecycle.ts";
 
 interface Probe { id: string; nonce: string; memberId: string; session: string; hostVersion: string; adapter: string; createdAt: number; receiverToken?: string; launchId?: string }
 export async function startProbe(store: Store, project: Project, member: Member): Promise<Record<string, unknown>> {
@@ -19,6 +22,8 @@ export async function startProbe(store: Store, project: Project, member: Member)
   let hostVersion = "unknown";
   if (member.runtime === "codex") hostVersion = inspectCodex(policy(project).codexBin)?.version ?? "unknown";
   const native = socketBinding(project, member);
+  const agy = member.runtime === "agy" ? agyObservation(project, member.session_ref) : null;
+  if (member.runtime === "agy") requireThat(agy && !paused(project, member), "E_RECEIVER", "agy needs its own native join/hook observation and an unpaused receiver before probing");
   if (member.runtime === "claude" && native?.enabled) {
     validatePeer(project, member, native);
     requireThat(!paused(project, member), "E_RECEIVER", "Resolve the native socket notification pause before probing");
@@ -26,8 +31,8 @@ export async function startProbe(store: Store, project: Project, member: Member)
   } else requireThat(member.runtime !== "claude", "E_RECEIVER", "Claude needs its supported native socket before probing; run join and doctor");
   const from = store.join({ runtime: "generic", session: null }, "agentchat-probe");
   const probe: Probe = { id, nonce, memberId: member.id, session: member.session_ref, hostVersion,
-    adapter: member.runtime === "codex" ? "codex-queue" : SOCKET_ADAPTER, createdAt: Date.now(),
-    ...(native?.enabled ? { receiverToken: native.instance } : {}) };
+    adapter: member.runtime === "codex" ? "codex-queue" : member.runtime === "agy" ? agyMode(project, member.session_ref) : SOCKET_ADAPTER, createdAt: Date.now(),
+    ...(native?.enabled ? { receiverToken: native.instance } : agy ? { receiverToken: agy.instance } : {}) };
   writeJson(join(project.room, "probes", `${id}.json`), probe);
   const sent = store.send({ from: from.id, to: member.id, id, notify: true,
     body: `AgentChat connectivity probe only. Reply to this message using send --reply-to ${id} --text ${nonce}. Do not modify business files, change permissions, or start other agents. A successful CLI submission alone is not proof; the reply must come from this original native session.` });
@@ -42,6 +47,12 @@ export function recordProbeReply(store: Store, project: Project, message: Messag
   const member = store.member(message.from_id);
   if (identity.runtime !== member.runtime || identity.session !== member.session_ref || member.session_ref !== probe.session || store.message(probe.id).to_id !== member.id) return;
   if (member.runtime === "claude" && probe.adapter !== SOCKET_ADAPTER) return;
+  if (member.runtime === "agy") {
+    if (probe.adapter !== AGY_TURN || agyMode(project, probe.session) !== probe.adapter) return;
+    const observation = agyObservation(project, probe.session), host = nearestHost(processAncestors());
+    if (!observation || observation.instance !== probe.receiverToken || host?.runtime !== "agy"
+      || observation.pid !== host.process.pid || observation.procStart !== host.process.procStart || env.ANTIGRAVITY_CONVERSATION_ID !== probe.session) return;
+  }
   if (probe.adapter === SOCKET_ADAPTER) {
     const binding = socketBinding(project, member), ownSocket = env.CLAUDE_CODE_MESSAGING_SOCKET?.replace(/^uds:/, "");
     if (!binding?.enabled || binding.instance !== probe.receiverToken || !ownSocket) return;
@@ -52,6 +63,7 @@ export function recordProbeReply(store: Store, project: Project, message: Messag
   }
   const previous = state(project, member);
   saveState(project, { ...previous, session: probe.session, active: member.runtime === "codex" ? true : previous?.active ?? false, memberId: member.id,
+    ...(member.runtime === "agy" ? { runtime: "agy" as const } : {}),
     proof: { nonce: probe.nonce, replyId: message.id, verifiedAt: message.created_at, hostVersion: probe.hostVersion, adapter: probe.adapter,
       ...(probe.receiverToken ? { receiverToken: probe.receiverToken, launchId: probe.launchId } : {}) } });
 }
